@@ -1,0 +1,3 @@
+import { Type } from 'class-transformer'; import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+export class InvoiceLineDto{@IsString() description!:string; @Type(()=>Number) @IsNumber() quantity!:number; @Type(()=>Number) @IsNumber() unitPrice!:number; @Type(()=>Number) @IsNumber() taxRate!:number; @IsOptional() @IsString() hsCode?:string; @IsOptional() @IsString() itemId?:string}
+export class CreateInvoiceDto{@IsString() branchId!:string; @IsOptional() @IsString() customerId?:string; @IsString() invoiceNo!:string; @IsOptional() @IsString() currency?:string; @IsOptional() @IsBoolean() fiscalRequired?:boolean; @IsArray() @ValidateNested({each:true}) @Type(()=>InvoiceLineDto) lines!:InvoiceLineDto[]}

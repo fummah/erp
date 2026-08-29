@@ -1,0 +1,2 @@
+import { Injectable } from '@nestjs/common'; import { MockZimraProvider } from './mock-zimra.provider'; import { FiscalProvider } from './fiscal-provider';
+@Injectable() export class FiscalProviderFactory { get():FiscalProvider {const mode=(process.env.ZIMRA_MODE||'mock').toLowerCase(); if(mode==='mock') return new MockZimraProvider(); throw new Error(`ZIMRA ${mode} provider is intentionally not implemented until official test/production credentials and approval are supplied.`)} }

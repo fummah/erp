@@ -1,0 +1,2 @@
+import { Controller, Get, Req, UseGuards } from '@nestjs/common'; import { ApiBearerAuth, ApiTags } from '@nestjs/swagger'; import { PrismaService } from '../../core/prisma/prisma.service'; import { JwtAuthGuard } from '../auth/auth.guard';
+@ApiTags('Companies') @ApiBearerAuth() @UseGuards(JwtAuthGuard) @Controller('companies') export class CompanyController{constructor(private prisma:PrismaService){} @Get() async list(@Req() req:any){return this.prisma.membership.findMany({where:{userId:req.user.sub},include:{company:{include:{branches:true}}}})} }

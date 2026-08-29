@@ -1,0 +1,244 @@
+node_modules/
+.next/
+dist/
+.env
+.env.local
+*.log
+coverage/
+.DS_Store
+content = r"""# ============================================================
+# NexusERP - Git Ignore
+# Next.js + NestJS + TypeScript + Prisma + PostgreSQL
+# ============================================================
+
+# ------------------------------------------------------------
+# Dependencies
+# ------------------------------------------------------------
+node_modules/
+**/node_modules/
+
+# ------------------------------------------------------------
+# Environment / secrets
+# NEVER commit real credentials, SMTP passwords, JWT secrets,
+# database URLs, ZIMRA keys/certificates, API keys, etc.
+# ------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+!**/.env.template
+
+# ------------------------------------------------------------
+# Next.js
+# ------------------------------------------------------------
+.next/
+**/.next/
+out/
+**/out/
+
+# Next.js local build / tracing
+.next-cache/
+
+# ------------------------------------------------------------
+# NestJS / Node / TypeScript build output
+# ------------------------------------------------------------
+dist/
+**/dist/
+build/
+**/build/
+lib/
+**/lib/
+
+*.tsbuildinfo
+
+# ------------------------------------------------------------
+# Test / coverage output
+# ------------------------------------------------------------
+coverage/
+**/coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+
+# ------------------------------------------------------------
+# Tool / framework caches
+# ------------------------------------------------------------
+.turbo/
+**/.turbo/
+.nx/
+.cache/
+**/.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.swc/
+**/.swc/
+
+# ------------------------------------------------------------
+# Prisma
+# Keep prisma/schema.prisma and prisma/migrations/ COMMITTED.
+# Ignore local SQLite files only if one is ever used for testing.
+# ------------------------------------------------------------
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ------------------------------------------------------------
+# Logs
+# ------------------------------------------------------------
+logs/
+**/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ------------------------------------------------------------
+# Runtime files / temporary files
+# ------------------------------------------------------------
+tmp/
+temp/
+.tmp/
+**/tmp/
+**/temp/
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# ------------------------------------------------------------
+# Generated exports / reports / PDFs
+# Adjust these if your repository intentionally contains samples.
+# ------------------------------------------------------------
+generated/
+exports/
+reports/generated/
+pdf-output/
+**/pdf-output/
+
+# ------------------------------------------------------------
+# Local uploads / runtime storage
+# Do not ignore committed static assets under public/.
+# ------------------------------------------------------------
+uploads/
+storage/uploads/
+**/storage/uploads/
+
+# ------------------------------------------------------------
+# Backup files / database dumps
+# ------------------------------------------------------------
+backups/
+**/backups/
+*.sql
+*.dump
+*.backup
+*.pgdump
+
+# ------------------------------------------------------------
+# Certificates / private keys / sensitive fiscal files
+# NEVER commit private keys or production certificates.
+# ------------------------------------------------------------
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.csr
+certificates/
+secrets/
+**/certificates/
+**/secrets/
+
+# If you intentionally commit PUBLIC test certificates,
+# explicitly whitelist them below, e.g.:
+# !certificates/test-public.crt
+
+# ------------------------------------------------------------
+# Package-manager caches
+# Keep package-lock.json / pnpm-lock.yaml / yarn.lock COMMITTED.
+# ------------------------------------------------------------
+.npm/
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# ------------------------------------------------------------
+# IDE / editor
+# ------------------------------------------------------------
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.idea/
+*.iml
+
+# Cursor / AI editor local state
+.cursor/
+.cursorignore.local
+
+# ------------------------------------------------------------
+# OS files
+# ------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Thumbs.db:encryptable
+Desktop.ini
+$RECYCLE.BIN/
+
+# ------------------------------------------------------------
+# Windows
+# ------------------------------------------------------------
+*.lnk
+
+# ------------------------------------------------------------
+# Misc local files
+# ------------------------------------------------------------
+*.local
+.env.local
+.vercel/
+.sentryclirc
+
+# ------------------------------------------------------------
+# Docker override files (if added later)
+# Keep Dockerfile/docker-compose.yml if they are part of source.
+# ------------------------------------------------------------
+docker-compose.override.yml
+
+# ------------------------------------------------------------
+# Optional local seed/output artefacts
+# ------------------------------------------------------------
+seed-output/
+debug-output/
+
+# ============================================================
+# IMPORTANT: DO NOT IGNORE THESE
+# ============================================================
+# package.json
+# package-lock.json / pnpm-lock.yaml / yarn.lock
+# prisma/schema.prisma
+# prisma/migrations/
+# src/
+# apps/
+# packages/
+# public/ (unless specific runtime files inside it need ignoring)
+# .env.example
+"""
+path = "/mnt/data/.gitignore"
+with open(path, "w", newline="\n") as f:
+    f.write(content)
+print(path)

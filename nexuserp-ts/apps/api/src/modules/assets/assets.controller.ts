@@ -1,0 +1,2 @@
+import { Controller, Get, Req, UseGuards } from '@nestjs/common'; import { ApiBearerAuth, ApiTags } from '@nestjs/swagger'; import { PrismaService } from '../../core/prisma/prisma.service'; import { JwtAuthGuard } from '../auth/auth.guard'; import { companyIdOf } from '../../core/context';
+@ApiTags('Assets') @ApiBearerAuth() @UseGuards(JwtAuthGuard) @Controller('assets') export class AssetsController{constructor(private prisma:PrismaService){} @Get() assets(@Req() req:any){return this.prisma.asset.findMany({where:{companyId:companyIdOf(req.user)}})} }

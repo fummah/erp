@@ -1,0 +1,1 @@
+import { Typography } from 'antd'; export function PageHeader({title,subtitle,extra}:{title:string;subtitle?:string;extra?:React.ReactNode}){return <div className="mb-6 flex justify-between items-start"><div><Typography.Title level={2} className="!mb-1">{title}</Typography.Title>{subtitle&&<Typography.Text type="secondary">{subtitle}</Typography.Text>}</div>{extra}</div>}
