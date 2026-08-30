@@ -135,22 +135,38 @@ export class PostingService {
   }
 
   async postSupplierInvoice(companyId: string, supplierInvoiceId: string) {
-    const si = await this.prisma.supplierInvoice.findFirst({ where: { id: supplierInvoiceId, companyId }, include: { lines: true, purchaseOrder: { include: { lines: true } } } });
+    const si = await this.prisma.supplierInvoice.findFirst({ where: { id: supplierInvoiceId, companyId }, include: { lines: true } });
     if (!si) throw new BadRequestException('Supplier invoice not found');
     if (si.status === 'POSTED') return si;
-    const hasStock = si.lines.some((l) => l.itemId);
+    if (!si.lines.length) throw new BadRequestException('Bill has no lines');
+    const byCode = await this.accountsByCode(companyId);
+    const drLines: { code: string; debit: number; credit: number; description: string }[] = [];
+    for (const l of si.lines) {
+      let code = l.accountCode;
+      if (!code && l.accountId) {
+        const acc = await this.prisma.ledgerAccount.findFirst({ where: { id: l.accountId, companyId } });
+        code = acc?.code || '';
+      }
+      if (!code) code = l.itemId ? '1200' : '6000';
+      if (!byCode[code]) throw new BadRequestException(`Line account ${code} not found for "${l.description}". Add an account to every bill line.`);
+      const net = Number(l.lineTotal) - Number(l.taxAmount || 0);
+      drLines.push({ code, debit: Number(net.toFixed(2)), credit: 0, description: l.description });
+    }
+    const taxTotal = Number(si.taxTotal || 0);
+    if (taxTotal > 0) drLines.push({ code: '2100', debit: Number(taxTotal.toFixed(2)), credit: 0, description: 'Input VAT' });
+    const total = Number(si.total);
+    drLines.push({ code: '2000', debit: 0, credit: Number(total.toFixed(2)), description: 'Accounts payable' });
+    const totalDebit = drLines.reduce((s, l) => s + l.debit, 0);
+    const totalCredit = drLines.reduce((s, l) => s + l.credit, 0);
+    if (Math.abs(totalDebit - totalCredit) > 0.02) throw new BadRequestException(`Bill does not balance (Dr ${totalDebit.toFixed(2)} vs Cr ${totalCredit.toFixed(2)}). Check line amounts and tax.`);
     await this.postJournal(companyId, {
       date: si.invoiceDate,
       description: `Supplier invoice ${si.invoiceNo}`,
       reference: si.invoiceNo,
       sourceType: 'SUPPLIER_INVOICE', sourceId: si.id,
-      lines: [
-        { code: hasStock ? '1200' : '6000', debit: Number(si.subtotal), credit: 0, description: hasStock ? 'Inventory received' : 'Purchases / expenses' },
-        ...(Number(si.taxTotal) > 0 ? [{ code: '2100', debit: Number(si.taxTotal), credit: 0, description: 'Input VAT' }] : []),
-        { code: '2000', debit: 0, credit: Number(si.total), description: 'Accounts payable' },
-      ],
+      lines: drLines,
     });
-    const po = si.purchaseOrder;
+    const po = si.purchaseOrderId ? await this.prisma.purchaseOrder.findFirst({ where: { id: si.purchaseOrderId, companyId }, include: { lines: true } }) : null;
     let matchStatus = 'NOT_MATCHED';
     if (po) {
       const diff = si.lines.some((l) => {
@@ -171,7 +187,7 @@ export class PostingService {
         await tx.purchaseOrder.update({ where: { id: po.id }, data: { billingStatus: bs } });
       }
     });
-    return this.prisma.supplierInvoice.findUnique({ where: { id: si.id }, include: { lines: true } });
+    return this.prisma.supplierInvoice.findUnique({ where: { id: si.id }, include: { lines: true, attachments: true } });
   }
 
   async postSupplierPayment(companyId: string, paymentId: string) {
@@ -192,7 +208,7 @@ export class PostingService {
       const paid = Number(totalPaid._sum.amount || 0);
       const total = Number(payment.supplierInvoice.total);
       const balance = Math.max(0, total - paid);
-      const payStatus = balance <= 0.005 ? 'PAID' : 'PARTIALLY_PAID';
+      const payStatus = paid <= 0.005 ? 'UNPAID' : balance <= 0.005 ? 'PAID' : 'PARTIALLY_PAID';
       await this.prisma.supplierInvoice.update({ where: { id: payment.supplierInvoice.id }, data: { status: 'POSTED', amountPaid: paid, balanceDue: balance, paymentStatus: payStatus } });
     }
     return this.prisma.supplierPayment.findUnique({ where: { id: payment.id }, include: { supplierInvoice: { include: { supplier: true } } } });

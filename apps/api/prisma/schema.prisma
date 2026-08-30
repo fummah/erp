@@ -186,6 +186,9 @@ model Company {
   employeeBenefits       EmployeeBenefit[]
   crmStages              CrmStage[]
   crmEvents              CrmEvent[]
+  priceLists             PriceList[]
+  stockReservations      StockReservation[]
+  inventoryCategories    InventoryCategory[]
   interviews             Interview[]
   offers                 Offer[]
   serviceTickets         ServiceTicket[]
@@ -400,6 +403,7 @@ model Customer {
   vatNumber      String?
   creditLimit    Decimal               @default(0) @db.Decimal(18, 2)
   status         String                @default("ACTIVE")
+  priceListId    String?
   invoices       SalesInvoice[]
   quotations     Quotation[]
   salesOrders    SalesOrder[]
@@ -597,23 +601,80 @@ model PurchaseOrderLine {
 }
 
 model InventoryItem {
-  id           String           @id @default(uuid())
-  companyId    String
-  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  sku          String
-  name         String
-  unit         String           @default("EA")
-  hsCode       String?
-  reorderLevel Decimal          @default(0) @db.Decimal(18, 4)
-  sellingPrice Decimal          @default(0) @db.Decimal(18, 2)
-  trackBatch   Boolean          @default(false)
-  trackSerial  Boolean          @default(false)
-  active       Boolean          @default(true)
-  movements    StockMovement[]
-  batches      InventoryBatch[]
-  serials      SerialNumber[]
+  id              String           @id @default(uuid())
+  companyId       String
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sku             String
+  name            String
+  unit            String           @default("EA")
+  hsCode          String?
+  barcode         String?
+  brand           String?
+  description     String?
+  salesDescription String?
+  purchaseDescription String?
+  type            String           @default("INVENTORY")
+  itemCategory    String?
+  categoryId      String?
+  category        InventoryCategory? @relation(fields: [categoryId], references: [id])
+  imageUrl        String?
+  reorderLevel    Decimal          @default(0) @db.Decimal(18, 4)
+  reorderQuantity Decimal          @default(0) @db.Decimal(18, 4)
+  safetyStock     Decimal          @default(0) @db.Decimal(18, 4)
+  sellingPrice    Decimal          @default(0) @db.Decimal(18, 2)
+  minSellingPrice Decimal?         @db.Decimal(18, 2)
+  purchaseCost    Decimal          @default(0) @db.Decimal(18, 2)
+  costingMethod   String?
+  trackBatch      Boolean          @default(false)
+  trackSerial     Boolean          @default(false)
+  trackExpiry     Boolean          @default(false)
+  salesTaxCode    String?
+  purchaseTaxCode String?
+  incomeAccountId String?
+  cogsAccountId   String?
+  inventoryAssetAccountId String?
+  expenseAccountId String?
+  adjustmentAccountId String?
+  defaultWarehouseId String?
+  preferredSupplierId String?
+  supplierSku     String?
+  leadTimeDays    Int?
+  allowDiscount   Boolean          @default(true)
+  active          Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @default(now()) @updatedAt
+  movements       StockMovement[]
+  batches         InventoryBatch[]
+  serials         SerialNumber[]
+  reservations    StockReservation[]
+  priceListItems  PriceListItem[]
 
   @@unique([companyId, sku])
+}
+
+model InventoryCategory {
+  id              String           @id @default(uuid())
+  companyId       String
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String
+  code            String?
+  parentId        String?
+  parent          InventoryCategory? @relation("CategoryTree", fields: [parentId], references: [id])
+  children        InventoryCategory[] @relation("CategoryTree")
+  description     String?
+  active          Boolean          @default(true)
+  incomeAccountId String?
+  cogsAccountId   String?
+  inventoryAssetAccountId String?
+  expenseAccountId String?
+  salesTaxCode    String?
+  purchaseTaxCode String?
+  items           InventoryItem[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([companyId])
+  @@unique([companyId, code])
 }
 
 model Warehouse {
@@ -648,6 +709,54 @@ model StockMovement {
   batchNo     String?
   serialNo    String?
   occurredAt  DateTime          @default(now())
+}
+
+model StockReservation {
+  id            String      @id @default(uuid())
+  companyId     String
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  itemId        String
+  item          InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  warehouseId   String?
+  salesOrderId  String?
+  referencedBy  String?
+  qty           Decimal     @default(0) @db.Decimal(18, 4)
+  status        String      @default("ACTIVE")
+  releasedAt    DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([itemId])
+  @@index([salesOrderId])
+}
+
+model PriceList {
+  id            String           @id @default(uuid())
+  companyId     String
+  company       Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  currency      String           @default("USD")
+  active        Boolean          @default(true)
+  customerGroup String?
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  items         PriceListItem[]
+  createdAt     DateTime         @default(now())
+
+  @@unique([companyId, name])
+}
+
+model PriceListItem {
+  id          String       @id @default(uuid())
+  priceListId String
+  priceList   PriceList    @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  itemId      String
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  price       Decimal      @default(0) @db.Decimal(18, 2)
+  minQty      Decimal?     @db.Decimal(18, 4)
+
+  @@unique([priceListId, itemId])
 }
 
 model Employee {
@@ -1166,6 +1275,7 @@ model SupplierInvoice {
   supplierInvoiceNo String?
   invoiceDate     DateTime              @default(now())
   dueDate         DateTime?
+  terms           String?
   status          String                @default("DRAFT")
   paymentStatus   String                @default("UNPAID")
   matchStatus     String                @default("NOT_MATCHED")
@@ -1180,6 +1290,7 @@ model SupplierInvoice {
   lines           SupplierInvoiceLine[]
   payments        SupplierPayment[]
   paymentAllocations SupplierPaymentAllocation[]
+  attachments     SupplierInvoiceAttachment[]
   createdAt       DateTime              @default(now())
 
   @@unique([companyId, invoiceNo])
@@ -1193,9 +1304,27 @@ model SupplierInvoiceLine {
   itemId            String?
   quantity          Decimal         @default(1) @db.Decimal(18, 4)
   unitPrice         Decimal         @default(0) @db.Decimal(18, 2)
+  discount          Decimal         @default(0) @db.Decimal(18, 2)
   taxRate           Decimal         @default(0) @db.Decimal(8, 4)
   taxAmount         Decimal         @default(0) @db.Decimal(18, 2)
   lineTotal         Decimal         @default(0) @db.Decimal(18, 2)
+  accountId         String?
+  accountCode       String?
+}
+
+model SupplierInvoiceAttachment {
+  id                String          @id @default(uuid())
+  companyId         String
+  supplierInvoiceId String
+  supplierInvoice   SupplierInvoice @relation(fields: [supplierInvoiceId], references: [id], onDelete: Cascade)
+  name              String
+  mime              String?
+  size              Int             @default(0)
+  dataUrl           String?
+  createdBy         String?
+  createdAt         DateTime        @default(now())
+
+  @@index([supplierInvoiceId])
 }
 
 model SupplierPayment {

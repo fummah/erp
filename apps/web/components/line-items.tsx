@@ -1,13 +1,14 @@
 'use client';
 import { Button, Form, Input, InputNumber, Select, Space, Tooltip } from 'antd';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { AccountSelector } from '@/components/account-selector';
 import { fmtMoney } from '@/lib/format';
 
-export function LineItems({ form, lines = 'lines', items = [], lineDefaults }: { form: any; lines?: string; items?: any[]; lineDefaults?: Record<string, any> }) {
+export function LineItems({ form, lines = 'lines', items = [], lineDefaults, account = false, priceKey = 'sellingPrice' }: { form: any; lines?: string; items?: any[]; lineDefaults?: Record<string, any>; account?: boolean; priceKey?: string }) {
   const opts = items.map((i: any) => ({
     label: `${i.sku} — ${i.name}${Number(i.sellingPrice) ? ' ($' + Number(i.sellingPrice).toFixed(2) + ')' : ''}`,
     value: i.id,
-    price: Number(i.sellingPrice || 0),
+    price: Number(i[priceKey] ?? i.sellingPrice ?? 0),
     name: i.name,
   }));
   const watchIdx = (name: number) => [lines, name];
@@ -36,6 +37,7 @@ export function LineItems({ form, lines = 'lines', items = [], lineDefaults }: {
                     <Form.Item name={[name, 'quantity']} {...rest} rules={[{ required: true }]} className="!mb-0"><InputNumber placeholder="Qty" min={1} /></Form.Item>
                     <Form.Item name={[name, 'unitPrice']} {...rest} rules={[{ required: true }]} className="!mb-0"><InputNumber placeholder="Unit price" min={0} prefix="$" /></Form.Item>
                     <Form.Item name={[name, 'taxRate']} {...rest} className="!mb-0"><InputNumber placeholder="Tax %" min={0} /></Form.Item>
+                    {account && <Form.Item name={[name, 'accountId']} {...rest} rules={[{ required: true, message: 'Account' }]} className="!mb-0 w-60"><AccountSelector allowedTypes={['EXPENSE', 'ASSET']} postingOnly placeholder="Account" /></Form.Item>}
                     <Tooltip title="Amount (Qty × Rate)"><span className="inline-block w-24 text-right text-[13px] font-semibold text-[#003366]">{fmtMoney(amount)}</span></Tooltip>
                     <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
                   </Space>

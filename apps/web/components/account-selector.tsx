@@ -45,7 +45,7 @@ function allowedCoaTypes(allowedTypes?: string[]): { types: string[]; cashOnly: 
 // - account-type badge on every option
 // - search by code / name / type
 // - contextual filtering via allowedTypes (e.g. ['BANK','CASH','UNDEPOSITED_FUNDS'])
-export function AccountSelector({ value, onChange, allowedTypes, placeholder = 'Select account', allowClear = true, className }: { value?: string | null; onChange?: (v: string | undefined) => void; allowedTypes?: string[]; placeholder?: string; allowClear?: boolean; className?: string }) {
+export function AccountSelector({ value, onChange, allowedTypes, placeholder = 'Select account', allowClear = true, className, postingOnly }: { value?: string | null; onChange?: (v: string | undefined) => void; allowedTypes?: string[]; placeholder?: string; allowClear?: boolean; className?: string; postingOnly?: boolean }) {
   const meta = useMeta();
   const accounts = useMemo(() => (Array.isArray(meta.data?.accounts) ? meta.data?.accounts : []), [meta.data]);
   const { types, cashOnly } = useMemo(() => allowedCoaTypes(allowedTypes), [allowedTypes]);
@@ -61,7 +61,7 @@ export function AccountSelector({ value, onChange, allowedTypes, placeholder = '
     const roots: any[] = [];
     filtered.forEach((a: any) => { const n = byId[a.id]; const p = a.parentId ? byId[a.parentId] : null; if (p) p.children.push(n); else roots.push(n); });
     const out: any[] = [];
-    const walk = (list: any[], depth: number) => { list.forEach((n) => { n.depth = depth; out.push(n); walk(n.children, depth + 1); }); };
+    const walk = (list: any[], depth: number) => { list.forEach((n) => { n.depth = depth; n.hasChildren = n.children.length > 0; out.push(n); walk(n.children, depth + 1); }); };
     walk(roots, 0);
     return out;
   }, [filtered]);
@@ -71,6 +71,7 @@ export function AccountSelector({ value, onChange, allowedTypes, placeholder = '
     return {
       value: a.id,
       searchText: `${a.code} ${a.name} ${a.type} ${t.label}`.toLowerCase(),
+      disabled: postingOnly ? a.hasChildren : false,
       label: (
         <div className="flex items-center gap-2" style={{ paddingLeft: a.depth * 16 }}>
           <span className="font-mono text-[12px] text-[#64748b]">{a.code}</span>

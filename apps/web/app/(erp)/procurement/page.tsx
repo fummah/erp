@@ -63,7 +63,7 @@ function ProcDocTab({ path, invalidates, idPrefix, numberKey, supplierRequired =
             </Form.Item>
             <Form.Item label="Date required" name="dateRequired"><DatePicker className="w-full" /></Form.Item>
           </div>
-          <Form.Item label="Lines" required><LineItems form={form} lines="lines" items={itemOptions} /></Form.Item>
+          <Form.Item label="Lines" required><LineItems form={form} lines="lines" items={itemOptions} priceKey="purchaseCost" /></Form.Item>
         </Form>
       </Modal>
     </>

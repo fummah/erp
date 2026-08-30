@@ -6,6 +6,10 @@ export class ReqLineDto {
   @IsOptional() @IsString() itemId?: string;
   @Type(() => Number) @IsNumber() quantity!: number;
   @Type(() => Number) @IsNumber() unitPrice!: number;
+  @IsOptional() @Type(() => Number) @IsNumber() discount?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() taxRate?: number;
+  @IsOptional() @IsString() accountId?: string;
+  @IsOptional() @IsString() accountCode?: string;
 }
 
 export class CreateRequisitionDto {
@@ -43,13 +47,21 @@ export class CreateSupplierInvoiceDto {
   @IsOptional() @IsString() invoiceNo?: string;
   @IsOptional() @IsString() invoiceDate?: string;
   @IsOptional() @IsString() dueDate?: string;
+  @IsOptional() @IsString() terms?: string;
+  @IsOptional() @IsString() projectId?: string;
   @IsOptional() @IsString() currency?: string;
   @IsOptional() @IsString() ref?: string;
   @IsOptional() @IsString() memo?: string;
   @IsArray() @ValidateNested({ each: true }) @Type(() => ReqLineDto) lines!: ReqLineDto[];
 }
 
+export class PaymentAllocationDto {
+  @IsString() supplierInvoiceId!: string;
+  @Type(() => Number) @IsNumber() amount!: number;
+}
+
 export class CreateSupplierPaymentDto {
+  @IsOptional() @IsString() supplierId?: string;
   @IsOptional() @IsString() supplierInvoiceId?: string;
   @IsOptional() @IsString() purchaseOrderId?: string;
   @IsOptional() @IsString() paidAt?: string;
@@ -57,6 +69,8 @@ export class CreateSupplierPaymentDto {
   @IsOptional() @IsString() method?: string;
   @IsOptional() @IsString() referenceNo?: string;
   @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() payFromAccountId?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PaymentAllocationDto) allocations?: PaymentAllocationDto[];
 }
 
 export class SupplierDto {

@@ -20,9 +20,10 @@ export class SalesController {
     let subtotal = 0, taxTotal = 0;
     const mapped = lines.map((l) => {
       const net = Number(l.quantity) * Number(l.unitPrice);
-      const tax = net * (Number(l.taxRate) / 100);
+      const taxRate = Number(l.taxRate || 0);
+      const tax = net * (taxRate / 100);
       subtotal += net; taxTotal += tax;
-      return { ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate: Number(l.taxRate), taxAmount: Number(tax.toFixed(2)), lineTotal: Number((net + tax).toFixed(2)) };
+      return { ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate, taxAmount: Number(tax.toFixed(2)), lineTotal: Number((net + tax).toFixed(2)) };
     });
     return { mapped, subtotal: Number(subtotal.toFixed(2)), taxTotal: Number(taxTotal.toFixed(2)), total: Number((subtotal + taxTotal).toFixed(2)) };
   }
@@ -283,13 +284,28 @@ export class SalesController {
     return { ok: true };
   }
   @Post('sales-orders/:id/confirm') async confirmOrder(@Req() req: any, @Param('id') id: string) {
-    return this.setOrderStatus(req, id, { status: 'CONFIRMED' } as StatusDto);
+    const companyId = companyIdOf(req.user);
+    const order = await this.prisma.salesOrder.findFirst({ where: { id, companyId }, include: { lines: true } });
+    if (!order) throw new BadRequestException('Sales order not found');
+    await this.setOrderStatus(req, id, { status: 'CONFIRMED' } as StatusDto);
+    for (const l of order.lines) {
+      if (!l.itemId || !(Number(l.quantity) > 0)) continue;
+      const reserved = await this.prisma.stockReservation.aggregate({ where: { itemId: l.itemId, status: 'ACTIVE' }, _sum: { qty: true } });
+      const onHand = await this.prisma.stockMovement.aggregate({ where: { itemId: l.itemId }, _sum: { quantity: true } });
+      const available = Number(onHand._sum.quantity || 0) - Number((reserved._sum.qty || 0).toFixed(4));
+      if (Number(l.quantity) > available + 0.001) throw new BadRequestException(`Cannot reserve ${l.itemId}: only ${available.toFixed(2)} available.`);
+      await this.prisma.stockReservation.create({ data: { companyId, itemId: l.itemId, salesOrderId: id, referencedBy: order.orderNo, qty: Number(l.quantity), status: 'ACTIVE' } });
+    }
+    return this.prisma.salesOrder.findUnique({ where: { id } });
   }
   @Post('sales-orders/:id/close') async closeOrder(@Req() req: any, @Param('id') id: string) {
     return this.setOrderStatus(req, id, { status: 'CLOSED' } as StatusDto);
   }
   @Post('sales-orders/:id/cancel') async cancelOrder(@Req() req: any, @Param('id') id: string) {
-    return this.setOrderStatus(req, id, { status: 'CANCELLED' } as StatusDto);
+    const companyId = companyIdOf(req.user);
+    await this.setOrderStatus(req, id, { status: 'CANCELLED' } as StatusDto);
+    await this.prisma.stockReservation.updateMany({ where: { companyId, salesOrderId: id, status: 'ACTIVE' }, data: { status: 'RELEASED', releasedAt: new Date() } });
+    return this.prisma.salesOrder.findUnique({ where: { id } });
   }
   @Delete('sales-orders/:id') async deleteOrder(@Req() req: any, @Param('id') id: string) {
     const companyId = companyIdOf(req.user);
