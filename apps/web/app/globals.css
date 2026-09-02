@@ -449,3 +449,14 @@ body {
   .nex-slide-in, .flow-dash-h, .flow-dash-v { animation: none !important; }
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Print — hide app chrome, keep only the payslip document             */
+/* ------------------------------------------------------------------ */
+@media print {
+  body * { visibility: hidden; }
+  #payslip-print, #payslip-print * { visibility: visible; }
+  #payslip-print { position: absolute; left: 0; top: 0; width: 100%; border: none !important; }
+  #payslip-print .print-note { display: none !important; }
+  #payslip-print .ant-drawer-close, .ant-drawer-header, .ant-drawer-extra, .ant-drawer-footer { display: none !important; }
+}
