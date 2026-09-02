@@ -1,12 +1,9 @@
 'use client';
-import { Card } from 'antd';
-import { PnlSection } from '@/components/finance-sections';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function ProfitLossPage() {
-  return (
-    <div className="nex-fade">
-      <Card className="nex-card" styles={{ body: { padding: '18px 20px' } }}><PnlSection /></Card>
-    </div>
-  );
+  const router = useRouter();
+  useEffect(() => { router.replace('/finance/reports?report=profit-loss'); }, [router]);
+  return null;
 }
-

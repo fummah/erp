@@ -7,6 +7,9 @@ import { CrudPage, StatusTag } from '@/components/crud-page';
 import { StatCard } from '@/components/stat-card';
 import { fmtDate, fmtMoney } from '@/lib/format';
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const monthName = (p: number) => (p >= 1 && p <= 12 ? MONTHS[p - 1] : `Period ${p}`);
+
 export default function Hr() {
   const employees = useQuery({ queryKey: ['/hr/employees'], queryFn: () => api('/hr/employees') });
   const leave = useQuery({ queryKey: ['/hr/leave-requests'], queryFn: () => api('/hr/leave-requests') });
@@ -26,18 +29,38 @@ export default function Hr() {
       fields={[
         { name: 'employeeNo', label: 'Employee no' }, { name: 'firstName', label: 'First name', required: true }, { name: 'lastName', label: 'Last name', required: true },
         { name: 'departmentId', label: 'Department', type: 'select', metaKey: 'departments', metaLabel: 'name' },
-        { name: 'position', label: 'Position' }, { name: 'managerId', label: 'Manager ID' }, { name: 'contractType', label: 'Contract type', type: 'select', options: ['PERMANENT', 'CONTRACT', 'TEMPORARY', 'INTERN'].map((c) => ({ label: c, value: c })) },
+        { name: 'position', label: 'Position' }, { name: 'managerId', label: 'Manager (employee id)' }, { name: 'contractType', label: 'Contract type', type: 'select', options: ['PERMANENT', 'CONTRACT', 'TEMPORARY', 'INTERN'].map((c) => ({ label: c, value: c })) },
         { name: 'email', label: 'Email' }, { name: 'hireDate', label: 'Hire date', type: 'date', required: true },
         { name: 'basicSalary', label: 'Basic salary', type: 'money', required: true },
         { name: 'currency', label: 'Currency', type: 'select', options: ['USD', 'ZWL'].map((c) => ({ label: c, value: c })), defaultValue: 'USD' },
-        { name: 'bankDetails', label: 'Bank details (JSON)', type: 'json', placeholder: '{"bank": "Bank", "account": "123"}' },
-        { name: 'taxDetails', label: 'Tax details (JSON)', type: 'json', placeholder: '{"tin": "123456"}' },
-        { name: 'emergencyContact', label: 'Emergency contact (JSON)', type: 'json', placeholder: '{"name": "X", "phone": "0"}' },
         { name: 'status', label: 'Status', type: 'select', options: ['ACTIVE', 'ON_LEAVE', 'TERMINATED'].map((c) => ({ label: c, value: c })), defaultValue: 'ACTIVE' },
-        { name: 'allowances', label: 'Allowances (JSON)', type: 'json', placeholder: '{"housing": 150, "transport": 50}' },
-        { name: 'deductions', label: 'Deductions (JSON)', type: 'json', placeholder: '{"loan": 20, "medical": 10}' },
         { name: 'active', label: 'Active', type: 'select', options: [{ label: 'Yes', value: true }, { label: 'No', value: false }], defaultValue: true },
+        { name: 'bankName', label: 'Bank name' }, { name: 'accountHolder', label: 'Account holder' }, { name: 'accountNumber', label: 'Account number' },
+        { name: 'accountType', label: 'Account type', type: 'select', options: ['BANK', 'SAVINGS', 'CHEQUE', 'CREDIT_CARD'].map((c) => ({ label: c.replace(/_/g, ' '), value: c })) },
+        { name: 'branchCode', label: 'Branch code' },
+        { name: 'tin', label: 'Tax ID / TIN' },
+        { name: 'contactName', label: 'Emergency contact' }, { name: 'contactRelationship', label: 'Relationship' }, { name: 'contactPhone', label: 'Contact phone' }, { name: 'contactEmail', label: 'Contact email' },
+        { name: 'allowanceAmount', label: 'Monthly allowance', type: 'money' }, { name: 'deductionAmount', label: 'Monthly deduction', type: 'money' },
       ]}
+      createPayload={(v: any) => ({
+        employeeNo: v.employeeNo, firstName: v.firstName, lastName: v.lastName, departmentId: v.departmentId, position: v.position, managerId: v.managerId,
+        contractType: v.contractType, email: v.email, hireDate: v.hireDate, basicSalary: Number(v.basicSalary || 0), currency: v.currency, status: v.status, active: v.active !== false,
+        bankDetails: { bank: v.bankName, accountHolder: v.accountHolder, accountNumber: v.accountNumber, accountType: v.accountType, branchCode: v.branchCode },
+        taxDetails: { tin: v.tin },
+        emergencyContact: { name: v.contactName, relationship: v.contactRelationship, phone: v.contactPhone, email: v.contactEmail },
+        allowances: { total: Number(v.allowanceAmount || 0) },
+        deductions: { total: Number(v.deductionAmount || 0) },
+      })}
+      editPayload={(v: any) => ({
+        firstName: v.firstName, lastName: v.lastName, departmentId: v.departmentId, position: v.position, managerId: v.managerId,
+        contractType: v.contractType, email: v.email, basicSalary: Number(v.basicSalary || 0), currency: v.currency, status: v.status, active: v.active !== false,
+        bankDetails: { bank: v.bankName, accountHolder: v.accountHolder, accountNumber: v.accountNumber, accountType: v.accountType, branchCode: v.branchCode },
+        taxDetails: { tin: v.tin },
+        emergencyContact: { name: v.contactName, relationship: v.contactRelationship, phone: v.contactPhone, email: v.contactEmail },
+        allowances: { total: Number(v.allowanceAmount || 0) },
+        deductions: { total: Number(v.deductionAmount || 0) },
+      })}
+      editValues={(r: any) => { const b = r.bankDetails || {}, t = r.taxDetails || {}, e = r.emergencyContact || {}, al = r.allowances || {}, de = r.deductions || {}; return { bankName: b.bank, accountHolder: b.accountHolder, accountNumber: b.accountNumber, accountType: b.accountType, branchCode: b.branchCode, tin: t.tin, contactName: e.name, contactRelationship: e.relationship, contactPhone: e.phone, contactEmail: e.email, allowanceAmount: al.total, deductionAmount: de.total }; }}
     /> },
     { key: 'departments', label: 'Departments', children: <CrudPage title="Departments" path="/hr/departments" createLabel="Department" canDelete
       columns={[{ title: 'Code', dataIndex: 'code', width: 110 }, { title: 'Department', dataIndex: 'name' }, { title: 'Branch', render: (_, r: any) => r.branch?.name || '—' }]}
@@ -73,11 +96,11 @@ export default function Hr() {
     /> },
     { key: 'payroll', label: 'Payroll Runs', children: <CrudPage title="Payroll Runs" path="/hr/payroll-runs" createLabel="Run" canDelete
       columns={[
-        { title: 'Period', dataIndex: 'period', width: 80, align: 'right' }, { title: 'Year', dataIndex: 'year', width: 80, align: 'right' },
+        { title: 'Payroll Period', render: (_v: any, r: any) => <span className="font-medium">{monthName(r.period)} {r.year}</span> },
         { title: 'Gross', dataIndex: 'totalGross', align: 'right', render: (v: any) => fmtMoney(v) }, { title: 'Net', dataIndex: 'totalNet', align: 'right', render: (v: any) => fmtMoney(v) },
         { title: 'Status', dataIndex: 'status', width: 110, render: (v: any) => <StatusTag value={v} /> },
       ]}
-      fields={[{ name: 'period', label: 'Period (1-12)', type: 'number', required: true }, { name: 'year', label: 'Year', type: 'number', required: true }]}
+      fields={[{ name: 'period', label: 'Period / Month', type: 'select', required: true, options: MONTHS.map((m, i) => ({ label: m, value: i + 1 })) }, { name: 'year', label: 'Year', type: 'number', required: true, defaultValue: new Date().getFullYear() }]}
       rowActions={[
         { key: 'process', label: 'Process', type: 'primary', show: (r) => r.status === 'DRAFT', url: (r) => `/hr/payroll-runs/${r.id}/process`, confirm: 'Process this payroll run (posts journals)?', extraInvalidate: ['/finance/journals'] },
         { key: 'lock', label: 'Lock', type: 'default', show: (r) => r.status === 'PROCESSED', url: (r) => `/hr/payroll-runs/${r.id}/lock` },

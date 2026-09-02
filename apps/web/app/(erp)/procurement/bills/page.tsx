@@ -15,6 +15,7 @@ import { useMeta } from '@/lib/meta';
 import { StatCard } from '@/components/stat-card';
 import { EnterBillForm } from '@/components/enter-bill-form';
 import { PayBillsWorkspace } from '@/components/pay-bills-workspace';
+import { BillManagementList } from '@/components/bill-management-list';
 import { fmtDate, fmtMoney, fmtNumber } from '@/lib/format';
 
 const TERMS = ['Due on Receipt', 'Net 7', 'Net 14', 'Net 30', 'Net 45', 'Net 60', 'Net 90', 'Custom'];
@@ -41,7 +42,7 @@ export default function BillsPage() {
   useEffect(() => { const b = sp.get('bill'); if (b) { setDetail(b); const r = sp.get('tab'); if (r) setTab(r); router.replace('/procurement/bills'); } }, []); // eslint-disable-line
 
   const items = [
-    { key: 'management', label: 'Bill Management', children: <BillManagementTab onOpen={(b) => setDetail(b)} onPay={(ids) => { setPayBills(ids); setPayOpen(true); }} onGoPay={() => setTab('pay')} /> },
+    { key: 'management', label: 'Bill Management', children: <BillManagementList onOpenBill={(id) => setDetail(id)} onGoPay={() => setTab('pay')} /> },
     { key: 'enter', label: 'Enter Bill', children: <EnterBillForm variant="tab" onSaved={() => setTab('management')} /> },
     { key: 'pay', label: 'Pay Bill', children: <PayBillsWorkspace onOpenBill={(id) => setDetail(id)} /> },
   ];

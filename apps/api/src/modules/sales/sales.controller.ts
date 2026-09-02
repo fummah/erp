@@ -740,6 +740,66 @@ export class SalesController {
     return { summary: { current: buckets(0), d30: buckets(30), d60: buckets(60), d90plus: invoices.reduce((s, i) => { const age = Math.floor((Date.now() - i.invoiceDate.getTime()) / 86400000); return s + (age >= 90 ? outstanding(i) : 0); }, 0) }, byCustomer: Object.values(byCustomer) };
   }
 
+  // Authoritative Accounts Receivable Aging & Collections report (due-date based,
+  // 5 buckets, invoice drill-down, GL control reconciliation).
+  @Get('ar-aging') async arAging(@Req() req: any, @Query() q: any) {
+    const companyId = companyIdOf(req.user);
+    const round = (n: any) => Number(Number(n).toFixed(2));
+    const asOf = q.asOf ? new Date(String(q.asOf).concat('T23:59:59')) : new Date();
+    const invoices = await this.prisma.salesInvoice.findMany({
+      where: { companyId, invoiceStatus: 'POSTED', invoiceDate: { lte: asOf } },
+      include: { customer: true, receipts: true, creditNotes: { where: { status: 'POSTED' } } },
+      orderBy: { invoiceDate: 'desc' },
+    });
+    const termsDays = (terms?: string | null) => { const m = /(\d+)/.exec(String(terms || '')); return m ? Number(m[1]) : null; };
+    const bucketOf = (due: Date | null) => {
+      if (!due) return { key: 'current', daysOverdue: null, missing: true };
+      const days = Math.floor((asOf.getTime() - due.getTime()) / 86400000);
+      if (days <= 0) return { key: 'current', daysOverdue: 0, missing: false };
+      if (days <= 30) return { key: 'd1_30', daysOverdue: days, missing: false };
+      if (days <= 60) return { key: 'd31_60', daysOverdue: days, missing: false };
+      if (days <= 90) return { key: 'd61_90', daysOverdue: days, missing: false };
+      return { key: 'd90plus', daysOverdue: days, missing: false };
+    };
+    const byCust: Record<string, any> = {};
+    for (const inv of invoices) {
+      const receipts = inv.receipts.filter((r) => r.status !== 'REVERSED' && new Date(r.receiptDate) <= asOf).reduce((s, r) => s + Number(r.amount), 0);
+      const credits = inv.creditNotes.filter((c) => new Date(c.creditNoteDate) <= asOf).reduce((s, c) => s + Number(c.total), 0);
+      const outstanding = Math.max(0, Number(inv.total || 0) - receipts - credits);
+      if (outstanding <= 0.005) continue;
+      let due = inv.dueDate ? new Date(inv.dueDate) : null;
+      let missingDue = false;
+      if (!due) { const td = termsDays(inv.terms); if (td) due = new Date(inv.invoiceDate.getTime() + td * 86400000); else missingDue = true; }
+      const b = bucketOf(due);
+      const key = inv.customerId || 'unknown';
+      if (!byCust[key]) {
+        const c = inv.customer;
+        byCust[key] = {
+          customerId: inv.customerId || 'unknown', customerCode: c?.code || '', customerName: c?.name || (inv.customerId ? 'Unknown Customer' : 'Archived Customer'),
+          email: c?.email || null, phone: c?.phone || null, current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, total: 0, missingDue: false, invoices: [],
+        };
+      }
+      const row = byCust[key];
+      row[b.key] += outstanding;
+      row.total += outstanding;
+      if (missingDue) row.missingDue = true;
+      row.invoices.push({ invoiceId: inv.id, invoiceNumber: inv.invoiceNo, invoiceDate: inv.invoiceDate, dueDate: inv.dueDate || null, effectiveDue: due, daysOverdue: b.daysOverdue, missingDue, originalAmount: round(Number(inv.total || 0)), appliedAmount: round(Number(inv.total || 0) - outstanding), remainingAmount: round(outstanding), bucket: b.key, paymentStatus: inv.paymentStatus });
+    }
+    const customers = Object.values(byCust).sort((a: any, b: any) => b.total - a.total);
+    let totalReceivables = 0, overdueAmount = 0, over90 = 0, customersWithBalance = 0, current = 0, d1_30 = 0, d31_60 = 0, d61_90 = 0;
+    for (const c of customers) { totalReceivables += c.total; overdueAmount += c.d1_30 + c.d31_60 + c.d61_90 + c.d90plus; over90 += c.d90plus; if (c.total > 0) customersWithBalance++; current += c.current; d1_30 += c.d1_30; d31_60 += c.d31_60; d61_90 += c.d61_90; }
+    const arAcct = await this.prisma.ledgerAccount.findFirst({ where: { companyId, name: { contains: 'Accounts Receivable' } } });
+    let control: number | null = null;
+    if (arAcct) { const agg = await this.prisma.journalLine.aggregate({ where: { accountId: arAcct.id, journal: { companyId, status: 'POSTED', date: { lte: asOf } } }, _sum: { debit: true, credit: true } }); control = round(Number(agg._sum.debit || 0) - Number(agg._sum.credit || 0)); }
+    return {
+      asOf: q.asOf || null,
+      summary: { totalReceivables: round(totalReceivables), overdueAmount: round(overdueAmount), customersWithBalance, over90: round(over90), current: round(current), d1_30: round(d1_30), d31_60: round(d31_60), d61_90: round(d61_90) },
+      customers,
+      reconciliation: { subledger: round(totalReceivables), control, difference: control == null ? null : round(totalReceivables - control) },
+      totalCustomers: customers.length,
+    };
+  }
+
   @Get('sales-report') async salesReport(@Req() req: any) {
     const companyId = companyIdOf(req.user);
     const invoices = await this.prisma.salesInvoice.findMany({ where: { companyId, status: { in: ['POSTED', 'PART_PAID', 'PAID'] } } });

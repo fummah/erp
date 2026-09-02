@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Checkbox, DatePicker, Drawer, Dropdown, Form, Input, InputNumber, Space, Table, Tooltip, message } from 'antd';
+import { Button, Checkbox, DatePicker, Drawer, Dropdown, Form, Input, InputNumber, Select, Space, Table, Tooltip, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { CheckCircleOutlined, DeleteOutlined, MoreOutlined, PayCircleOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -78,15 +78,13 @@ export function PayBillsWorkspace({ onPaymentPosted, onOpenBill }: { onPaymentPo
 function RowActions({ bill, onPay, onOpen }: { bill: any; onPay: () => void; onOpen: () => void }) {
   const qc = useQueryClient();
   const remaining = Number(bill.remaining);
-  const eligible = bill.documentStatus === 'POSTED' && remaining > 0;
   const overdue = bill.dueStatus === 'OVERDUE';
-  const payLabel = !eligible ? null : overdue ? 'Pay Bill' : Number(bill.paid) > 0.005 ? 'Pay Balance' : 'Pay Bill';
-  const more = [
-    { key: 'view', label: 'View Bill' }, { key: 'payments', label: 'View Payments' }, { key: 'supplier', label: 'View Supplier' }, { key: 'journal', label: 'View Journal Entry' },
-  ];
+  // Exactly one primary Pay action when eligible; otherwise View only (no duplicate).
+  const primary = (bill.documentStatus === 'POSTED' && remaining > 0) ? { label: overdue ? 'Pay Bill' : Number(bill.paid) > 0.005 ? 'Pay Balance' : 'Pay Bill' } : null;
+  const more = [{ key: 'view', label: 'View Bill' }, { key: 'payments', label: 'View Payments' }, { key: 'supplier', label: 'View Supplier' }, { key: 'journal', label: 'View Journal Entry' }];
   return (
     <Space size={2}>
-      {eligible ? <Button size="small" type="primary" icon={<PayCircleOutlined />} onClick={onPay}>{payLabel}</Button> : <Button size="small" onClick={onOpen}>View</Button>}
+      {primary ? <Button size="small" type="primary" icon={<PayCircleOutlined />} onClick={onPay}>{primary.label}</Button> : null}
       <Button size="small" onClick={onOpen}>View</Button>
       <Dropdown menu={{ items: more, onClick: ({ key }) => { if (key === 'view') onOpen(); else if (key === 'payments') window.open('/procurement', '_blank'); else if (key === 'supplier') window.open(`/procurement/suppliers/${bill.supplierId}`, '_blank'); else if (key === 'journal') window.open('/finance/journals', '_blank'); } }} trigger={['click']}><Button size="small" icon={<MoreOutlined />} /></Dropdown>
     </Space>

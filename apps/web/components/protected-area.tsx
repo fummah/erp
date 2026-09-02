@@ -25,8 +25,18 @@ export function ProtectedArea({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    if (status === 'unauthenticated') router.replace('/login');
-  }, [status, router]);
+    if (status === 'unauthenticated') {
+      const current = window.location.pathname + window.location.search;
+      const params = new URLSearchParams();
+      // A token still present but status unauthenticated = genuine session expiry
+      // (not a normal refresh or an explicit sign-out, which clears the token).
+      if (token) params.set('expired', '1');
+      // Preserve the intended destination so login can return the user there.
+      if (current && current !== '/') params.set('returnTo', current);
+      const qs = params.toString();
+      router.replace(qs ? `/login?${qs}` : '/login');
+    }
+  }, [status, router, token]);
 
   if (status !== 'authenticated' || !token) return <MinimalLoader />;
   return <ErpShell>{children}</ErpShell>;

@@ -284,11 +284,20 @@ export class ProcurementController {
   private async resolveBill(bill: any) {
     const total = Number(bill.total || 0);
     const [allocs, direct] = await Promise.all([
-      this.prisma.supplierPaymentAllocation.aggregate({ where: { supplierInvoiceId: bill.id, payment: { status: 'POSTED' } }, _sum: { amountApplied: true } }),
-      this.prisma.supplierPayment.aggregate({ where: { supplierInvoiceId: bill.id, status: 'POSTED' }, _sum: { amount: true } }),
+      this.prisma.supplierPaymentAllocation.findMany({ where: { supplierInvoiceId: bill.id, payment: { status: 'POSTED' } }, include: { payment: { select: { id: true, paymentNo: true, paidAt: true, method: true, referenceNo: true, status: true, payFromAccountName: true, createdBy: true, amount: true } } } }),
+      this.prisma.supplierPayment.findMany({ where: { supplierInvoiceId: bill.id, status: 'POSTED' } }),
     ]);
-    const paid = Math.max(Number(allocs._sum.amountApplied || 0), Number(direct._sum.amount || 0));
-    const remaining = Math.max(0, total - paid);
+    const allocPaid = allocs.reduce((s, a) => s + Number(a.amountApplied || 0), 0);
+    const directPaid = direct.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const paid = Math.max(allocPaid, directPaid);
+    const creditsApplied = Number(bill.creditsApplied || 0);
+    const remaining = Math.max(0, total - paid - creditsApplied);
+    // Distinct POSTED payments touching this bill (allocations or legacy direct).
+    const paymentIds = new Set<string>([...allocs.map((a: any) => a.payment.id), ...direct.map((p: any) => p.id)]);
+    const appliedPayments = [
+      ...allocs.map((a: any) => ({ paymentId: a.payment.id, paymentNo: a.payment.paymentNo, paidAt: a.payment.paidAt, method: a.payment.method, referenceNo: a.payment.referenceNo, status: a.payment.status, paymentAmount: Number(a.payment.amount || 0), appliedToBill: Number(a.amountApplied || 0) })),
+      ...direct.filter((p: any) => !paymentIds.has(p.id) || !allocs.some((a: any) => a.payment.id === p.id)).map((p: any) => ({ paymentId: p.id, paymentNo: p.paymentNo, paidAt: p.paidAt, method: p.method, referenceNo: p.referenceNo, status: p.status, paymentAmount: Number(p.amount || 0), appliedToBill: Number(p.amount || 0) })),
+    ];
     const rawStatus = String(bill.status || 'DRAFT').toUpperCase();
     const doc = ['POSTED', 'PAID', 'UNPAID', 'PART_PAID', 'PARTIALLY_PAID'].includes(rawStatus) ? 'POSTED' : rawStatus;
     let paymentStatus = 'NOT_POSTED';
@@ -303,7 +312,7 @@ export class ProcurementController {
     if (bill.status !== doc || Math.abs(Number(bill.amountPaid || 0) - paid) > 0.01 || Math.abs(Number(bill.balanceDue || 0) - remaining) > 0.01 || bill.paymentStatus !== paymentStatus) {
       await this.prisma.supplierInvoice.update({ where: { id: bill.id }, data: { status: doc, amountPaid: paid, balanceDue: remaining, paymentStatus } }).catch(() => {});
     }
-    return { total, paid: Number(paid.toFixed(2)), remaining: Number(remaining.toFixed(2)), paymentStatus, documentStatus: doc };
+    return { total, paid: Number(paid.toFixed(2)), remaining: Number(remaining.toFixed(2)), paymentStatus, documentStatus: doc, paymentCount: paymentIds.size, appliedPayments };
   }
   @Get('bills') async bills(@Req() req: any, @Query() q: any) {
     const companyId = companyIdOf(req.user);
@@ -321,7 +330,7 @@ export class ProcurementController {
     let rows: any[] = [];
     for (const b of bills) {
       const r = await this.resolveBill(b);
-      rows.push({ ...b, status: r.documentStatus, documentStatus: r.documentStatus, amountPaid: r.paid, balanceDue: r.remaining, remaining: r.remaining, paid: r.paid, paymentStatus: r.paymentStatus, dueStatus: this.dueStatusOf(b) });
+      rows.push({ ...b, status: r.documentStatus, documentStatus: r.documentStatus, amountPaid: r.paid, balanceDue: r.remaining, remaining: r.remaining, paid: r.paid, paymentStatus: r.paymentStatus, paymentCount: r.paymentCount, appliedPayments: r.appliedPayments, dueStatus: this.dueStatusOf(b) });
     }
     if (q.dueStatus && q.dueStatus !== 'ALL') rows = rows.filter((r) => r.dueStatus === q.dueStatus);
     if (q.onlyOutstanding === 'true') rows = rows.filter((r) => r.documentStatus === 'POSTED' && r.remaining > 0);
@@ -335,13 +344,68 @@ export class ProcurementController {
     const bill = await this.prisma.supplierInvoice.findFirst({ where: { id, companyId }, include: { supplier: true, purchaseOrder: true, project: true, lines: { include: { } }, payments: { include: { allocations: true } }, attachments: true, paymentAllocations: { include: { payment: true } } } });
     if (!bill) throw new BadRequestException('Bill not found');
     const r = await this.resolveBill(bill);
-    return { ...bill, status: r.documentStatus, documentStatus: r.documentStatus, amountPaid: r.paid, balanceDue: r.remaining, remaining: r.remaining, paid: r.paid, paymentStatus: r.paymentStatus };
+    return { ...bill, status: r.documentStatus, documentStatus: r.documentStatus, amountPaid: r.paid, balanceDue: r.remaining, remaining: r.remaining, paid: r.paid, paymentStatus: r.paymentStatus, paymentCount: r.paymentCount, appliedPayments: r.appliedPayments };
   }
   @Get('supplier-invoices') async supplierInvoices(@Req() req: any) {
     const list = await this.prisma.supplierInvoice.findMany({ where: { companyId: companyIdOf(req.user) }, include: { supplier: true, purchaseOrder: true, lines: true, payments: true, attachments: true }, orderBy: { invoiceDate: 'desc' } });
     const out = [];
-    for (const i of list) { const r = await this.resolveBill(i); out.push({ ...i, status: r.documentStatus, documentStatus: r.documentStatus, amountPaid: r.paid, balanceDue: r.remaining, remaining: r.remaining, paymentStatus: r.paymentStatus }); }
+    for (const i of list) { const r = await this.resolveBill(i); out.push({ ...i, status: r.documentStatus, documentStatus: r.documentStatus, amountPaid: r.paid, balanceDue: r.remaining, remaining: r.remaining, paymentStatus: r.paymentStatus, paymentCount: r.paymentCount }); }
     return out;
+  }
+
+  // Authoritative Accounts Payable Aging & payment-planning report (due-date based,
+  // 5 buckets, bill drill-down, historical as-of, AP control reconciliation).
+  @Get('ap-aging') async apAging(@Req() req: any, @Query() q: any) {
+    const companyId = companyIdOf(req.user);
+    const round = (n: any) => Number(Number(n).toFixed(2));
+    const asOf = q.asOf ? new Date(String(q.asOf).concat('T23:59:59')) : new Date();
+    const bills = await this.prisma.supplierInvoice.findMany({ where: { companyId, status: 'POSTED' }, include: { supplier: true, purchaseOrder: true, payments: true }, orderBy: { invoiceDate: 'desc' } });
+    const termsDays = (terms?: string | null) => { const m = /(\d+)/.exec(String(terms || '')); return m ? Number(m[1]) : null; };
+    const bucketOf = (due: Date | null) => {
+      if (!due) return { key: 'current', daysOverdue: null, missing: true };
+      const days = Math.floor((asOf.getTime() - due.getTime()) / 86400000);
+      if (days <= 0) return { key: 'current', daysOverdue: 0, missing: false };
+      if (days <= 30) return { key: 'd1_30', daysOverdue: days, missing: false };
+      if (days <= 60) return { key: 'd31_60', daysOverdue: days, missing: false };
+      if (days <= 90) return { key: 'd61_90', daysOverdue: days, missing: false };
+      return { key: 'd90plus', daysOverdue: days, missing: false };
+    };
+    const payStatus = (remaining: number, original: number, overdue: boolean) => { if (remaining <= 0.005) return 'PAID'; if (overdue) return 'OVERDUE'; if (remaining < original - 0.005) return 'PARTIALLY_PAID'; return 'UNPAID'; };
+    const byVendor: Record<string, any> = {};
+    for (const bill of bills) {
+      const paidAsOf = (bill.payments || []).filter((p) => p.status !== 'REVERSED' && new Date(p.paidAt) <= asOf).reduce((s: number, p: any) => s + Number(p.amount), 0);
+      const original = round(Number(bill.total || 0));
+      const remaining = Math.max(0, round(original - paidAsOf - Number(bill.creditsApplied || 0)));
+      if (remaining <= 0.005) continue;
+      let due = bill.dueDate ? new Date(bill.dueDate) : null;
+      let missingDue = false;
+      if (!due) { const td = termsDays(bill.terms); if (td) due = new Date(bill.invoiceDate.getTime() + td * 86400000); else missingDue = true; }
+      const b = bucketOf(due);
+      const key = bill.supplierId || 'unknown';
+      if (!byVendor[key]) {
+        const s = bill.supplier;
+        byVendor[key] = { vendorId: bill.supplierId || 'unknown', vendorCode: s?.code || '', vendorName: s?.name || (bill.supplierId ? 'Unknown Vendor' : 'Archived Vendor'), paymentTerms: bill.terms || (s as any)?.defaultTerms || '', currency: bill.currency || 'USD', current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, total: 0, openBillCount: 0, missingDue: false, invoices: [] };
+      }
+      const row = byVendor[key];
+      row[b.key] += remaining;
+      row.total += remaining;
+      row.openBillCount += 1;
+      if (missingDue) row.missingDue = true;
+      row.invoices.push({ billId: bill.id, billNumber: bill.invoiceNo, supplierInvoiceNumber: bill.supplierInvoiceNo || '', billDate: bill.invoiceDate, dueDate: bill.dueDate || null, effectiveDue: due, daysOverdue: b.daysOverdue, missingDue, originalAmount: original, paidAmount: round(paidAsOf), creditApplied: round(Number(bill.creditsApplied || 0)), remainingAmount: remaining, bucket: b.key, paymentStatus: payStatus(remaining, original, !!(b.daysOverdue && b.daysOverdue > 0)), documentStatus: 'POSTED', purchaseOrderId: bill.purchaseOrderId, purchaseOrderNumber: bill.purchaseOrder?.poNo || null, grnId: bill.purchaseOrderId });
+    }
+    const vendors = Object.values(byVendor).sort((a: any, b: any) => b.total - a.total);
+    let totalPayables = 0, overduePayables = 0, over90 = 0, vendorsWithBalance = 0, current = 0, d1_30 = 0, d31_60 = 0, d61_90 = 0;
+    for (const v of vendors) { totalPayables += v.total; overduePayables += v.d1_30 + v.d31_60 + v.d61_90 + v.d90plus; over90 += v.d90plus; if (v.total > 0) vendorsWithBalance++; current += v.current; d1_30 += v.d1_30; d31_60 += v.d31_60; d61_90 += v.d61_90; }
+    const apAcct = await this.prisma.ledgerAccount.findFirst({ where: { companyId, name: { contains: 'Accounts Payable' } } });
+    let control: number | null = null;
+    if (apAcct) { const agg = await this.prisma.journalLine.aggregate({ where: { accountId: apAcct.id, journal: { companyId, status: 'POSTED', date: { lte: asOf } } }, _sum: { debit: true, credit: true } }); control = round(Number(agg._sum.credit || 0) - Number(agg._sum.debit || 0)); }
+    return {
+      asOf: q.asOf || null,
+      summary: { totalPayables: round(totalPayables), overduePayables: round(overduePayables), vendorsWithBalance, over90: round(over90), current: round(current), d1_30: round(d1_30), d31_60: round(d31_60), d61_90: round(d61_90) },
+      vendors,
+      reconciliation: { subledger: round(totalPayables), control, difference: control == null ? null : round(totalPayables - control) },
+      totalVendors: vendors.length,
+    };
   }
   @UseGuards(PermissionsGuard) @RequirePermissions('procurement.bills.manage')
   @Post('supplier-invoices') async createSupplierInvoice(@Req() req: any, @Body() dto: CreateSupplierInvoiceDto) {

@@ -1,12 +1,9 @@
 'use client';
-import { Card } from 'antd';
-import { CashflowSection } from '@/components/finance-sections';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function CashflowPage() {
-  return (
-    <div className="nex-fade">
-      <Card className="nex-card" styles={{ body: { padding: '18px 20px' } }}><CashflowSection /></Card>
-    </div>
-  );
+  const router = useRouter();
+  useEffect(() => { router.replace('/finance/reports?report=cash-flow'); }, [router]);
+  return null;
 }
-

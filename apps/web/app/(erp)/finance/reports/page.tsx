@@ -1,21 +1,26 @@
 'use client';
-import { Card, Tabs } from 'antd';
-import { BalanceSheetSection, CashflowSection, PnlSection, VarianceSection } from '@/components/finance-sections';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { FinancialReports } from '@/components/finance/financial-reports';
 
-const items = [
-  { key: 'pnl', label: 'Profit & Loss', children: <PnlSection /> },
-  { key: 'bs', label: 'Balance Sheet', children: <BalanceSheetSection /> },
-  { key: 'cashflow', label: 'Cash Flow', children: <CashflowSection /> },
-  { key: 'variance', label: 'Budget vs Actual', children: <VarianceSection /> },
-];
+const KEY_TO_TAB: Record<string, string> = { 'profit-loss': 'pnl', 'balance-sheet': 'bs', cashflow: 'cashflow', 'budget-vs-actual': 'variance' };
+const TAB_TO_KEY: Record<string, string> = { pnl: 'profit-loss', bs: 'balance-sheet', cashflow: 'cashflow', variance: 'budget-vs-actual' };
 
-export default function ReportsPage() {
-  return (
-    <div className="nex-fade">
-      <Card className="nex-card" styles={{ body: { padding: '18px 20px' } }}>
-        <Tabs items={items} defaultActiveKey="pnl" destroyOnHidden />
-      </Card>
-    </div>
-  );
+function ReportsInternal() {
+  const router = useRouter();
+  const sp = useSearchParams();
+  const initial = KEY_TO_TAB[sp.get('report') || 'profit-loss'] || 'pnl';
+  const [active, setActive] = useState(initial);
+
+  useEffect(() => {
+    const want = KEY_TO_TAB[sp.get('report') || 'profit-loss'] || 'pnl';
+    if (want !== active) setActive(want);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sp.get('report')]);
+
+  return <FinancialReports active={active} onActiveChange={(k) => router.replace(`/finance/reports?report=${TAB_TO_KEY[k]}`)} />;
 }
 
+export default function ReportsPage() {
+  return <Suspense fallback={null}><ReportsInternal /></Suspense>;
+}

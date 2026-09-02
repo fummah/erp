@@ -10,6 +10,13 @@ export class EmployeeDto {
   @IsString() hireDate!: string;
   @Type(() => Number) @IsNumber() basicSalary!: number;
   @IsOptional() @IsString() currency?: string;
+  @IsOptional() @IsString() position?: string;
+  @IsOptional() @IsString() managerId?: string;
+  @IsOptional() @IsString() contractType?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsObject() bankDetails?: any;
+  @IsOptional() @IsObject() taxDetails?: any;
+  @IsOptional() @IsObject() emergencyContact?: any;
   @IsOptional() @IsObject() allowances?: any;
   @IsOptional() @IsObject() deductions?: any;
   @IsOptional() @IsBoolean() active?: boolean;

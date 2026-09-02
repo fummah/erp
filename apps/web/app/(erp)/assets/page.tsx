@@ -21,7 +21,7 @@ export default function Assets() {
       columns={[
         { title: 'Asset No', dataIndex: 'assetNo', width: 110 }, { title: 'Asset', dataIndex: 'name' }, { title: 'Category', dataIndex: 'category', width: 120 },
         { title: 'Location', dataIndex: 'location', width: 120 }, { title: 'Cost', dataIndex: 'cost', align: 'right', render: (v: any) => fmtMoney(v) },
-        { title: 'Book Value', dataIndex: 'bookValue', align: 'right', render: (v: any) => fmtMoney(v) },
+        { title: 'Book Value', align: 'right', render: (_v: any, r: any) => fmtMoney(Number(r.bookValue ?? Number(r.cost) - Number(r.accumulatedDepreciation || 0))) },
         { title: 'Status', dataIndex: 'status', width: 110, render: (v: any) => <StatusTag value={v} /> },
       ]}
       fields={[
@@ -32,10 +32,11 @@ export default function Assets() {
         { name: 'usefulLife', label: 'Useful life (years)', type: 'number' },
       ]}
       rowActions={[
-        { key: 'depreciate', label: 'Depreciate', type: 'primary', show: (r) => r.status === 'ACTIVE', url: (r) => `/assets/${r.id}/depreciate`, extraInvalidate: ['/finance/journals'] },
-        { key: 'dispose', label: 'Dispose', type: 'danger', show: (r) => r.status === 'ACTIVE', url: (r) => `/assets/${r.id}/dispose`, body: () => ({ proceeds: 0, reason: 'Disposed' }), confirm: 'Dispose this asset? (posts GL gain/loss)' },
+        { key: 'edit', label: 'Edit', type: 'default' },
+        { key: 'depreciate', label: 'Depreciate', type: 'default', show: (r) => r.status === 'ACTIVE', url: (r) => `/assets/${r.id}/depreciate`, extraInvalidate: ['/finance/journals'] },
+        { key: 'dispose', label: 'Dispose', type: 'default', show: (r) => r.status === 'ACTIVE', url: (r) => `/assets/${r.id}/dispose`, body: () => ({ proceeds: 0, reason: 'Disposed' }), confirm: 'Dispose this asset? (posts GL gain/loss)' },
       ]}
-      extra={<Button type="primary" onClick={() => api('/assets/depreciation-run', { method: 'POST' }).then(() => { message.success('Depreciation run posted'); qc.invalidateQueries({ queryKey: ['/assets'] }); qc.invalidateQueries({ queryKey: ['/finance/journals'] }); }).catch((e) => message.error(e.message))}>Run Depreciation</Button>}
+      extra={<Button type="primary" icon={<DollarOutlined />} onClick={() => api('/assets/depreciation-run', { method: 'POST' }).then(() => { message.success('Depreciation run posted'); qc.invalidateQueries({ queryKey: ['/assets'] }); qc.invalidateQueries({ queryKey: ['/finance/journals'] }); }).catch((e) => message.error(e.message))}>Run Depreciation</Button>}
     /> },
     { key: 'maintenance', label: 'Maintenance', children: <CrudPage title="Asset Maintenance" path="/assets/maintenance" createLabel="Job" canDelete
       columns={[

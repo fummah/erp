@@ -4,6 +4,7 @@ export type RoleDef = { name: string; description: string; permissions: string[]
 export const PERMISSIONS: PermissionDef[] = [
   { code: 'finance.accounts.view', name: 'View accounts', module: 'finance' },
   { code: 'finance.accounts.manage', name: 'Manage accounts', module: 'finance' },
+  { code: 'finance.account_types.manage', name: 'Manage account types & sub-types', module: 'finance' },
   { code: 'finance.journals.view', name: 'View journals', module: 'finance' },
   { code: 'finance.journals.create', name: 'Create journals', module: 'finance' },
   { code: 'finance.journals.post', name: 'Post journals', module: 'finance' },

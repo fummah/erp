@@ -282,12 +282,15 @@ export function JournalEntries() {
       form.resetFields();
       qc.invalidateQueries({ queryKey: ['finance', 'journals'] });
       qc.invalidateQueries({ queryKey: ['finance', 'accounts'] });
+      qc.invalidateQueries({ queryKey: ['finance', 'accounts-summary'] });
+      qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
+      qc.invalidateQueries({ queryKey: ['finance', 'dashboard'] });
       qc.invalidateQueries({ queryKey: ['finance', 'trial-balance'] });
     } catch (e: any) { message.error(e.message); } finally { setSaving(false); }
   }
 
   async function reverse(id: string) {
-    try { await api(`/finance/journals/${id}/reverse`, { method: 'POST' }); message.success('Journal reversed'); qc.invalidateQueries({ queryKey: ['finance', 'journals'] }); qc.invalidateQueries({ queryKey: ['finance', 'accounts'] }); qc.invalidateQueries({ queryKey: ['finance', 'trial-balance'] }); }
+    try { await api(`/finance/journals/${id}/reverse`, { method: 'POST' }); message.success('Journal reversed'); qc.invalidateQueries({ queryKey: ['finance', 'journals'] }); qc.invalidateQueries({ queryKey: ['finance', 'accounts'] }); qc.invalidateQueries({ queryKey: ['finance', 'accounts-summary'] }); qc.invalidateQueries({ queryKey: ['finance', 'ledger'] }); qc.invalidateQueries({ queryKey: ['finance', 'dashboard'] }); qc.invalidateQueries({ queryKey: ['finance', 'trial-balance'] }); }
     catch (e: any) { message.error(e.message); }
   }
 
@@ -423,7 +426,8 @@ export function TrialBalanceSection() {
 }
 
 const moneyCol = (dataIndex: string) => ({ title: 'Amount', dataIndex, align: 'right' as const, render: (v: any) => fmtMoney(v) });
-const sectionRows = (data: any, type: string) => Object.entries(data?.[type] || {}).map(([code, v]) => ({ code, value: Number(v) }));
+const sectionRows = (data: any, type: string) => Object.entries(data?.[type] || {}).map(([code, v]) => ({ code, name: data?.names?.[code], value: Number(v) }));
+const accountCell = (v: any, r: any) => <span><span className="font-mono font-semibold text-[12px] text-[#003366]">{v}</span>{r?.name ? <span className="text-[#475467]"> · {r.name}</span> : null}</span>;
 
 /* ------------------------------ Profit & Loss ------------------------------ */
 export function PnlSection() {
@@ -437,9 +441,9 @@ export function PnlSection() {
         <StatCard icon={<FundOutlined />} label="Net profit" value={fmtMoney(pnl.data?.netProfit)} color={(pnl.data?.netProfit || 0) >= 0 ? '#10b981' : '#ef4444'} gradient={(pnl.data?.netProfit || 0) >= 0 ? 'linear-gradient(135deg,#f0fdf9,#ecfdf5)' : 'linear-gradient(135deg,#fef2f2,#fff7ed)'} />
       </div>
       <ReportTable title="Revenue" data={sectionRows(pnl.data, 'revenue')}
-        columns={[{ title: 'Account', dataIndex: 'code', render: (v) => <span className="font-mono font-semibold text-[12px] text-[#003366]">{v}</span> }, moneyCol('amount')]} />
+        columns={[{ title: 'Account', dataIndex: 'code', render: accountCell }, moneyCol('amount')]} />
       <ReportTable title="Expenses" data={sectionRows(pnl.data, 'expenses')}
-        columns={[{ title: 'Account', dataIndex: 'code', render: (v) => <span className="font-mono font-semibold text-[12px] text-[#003366]">{v}</span> }, moneyCol('amount')]} />
+        columns={[{ title: 'Account', dataIndex: 'code', render: accountCell }, moneyCol('amount')]} />
       <Card className="nex-card" styles={{ body: { padding: 20 } }}>
         <div className="flex items-center justify-between">
           <Typography.Text strong className="!text-[15px]">Net profit for the period</Typography.Text>
@@ -462,9 +466,9 @@ export function BalanceSheetSection() {
         <StatCard icon={<AuditOutlined />} label="Total liabilities" value={fmtMoney(bs.data?.totals?.LIABILITY)} color="#f59e0b" />
         <StatCard icon={<SolutionOutlined />} label="Equity + retained" value={fmtMoney(bs.data?.totals?.EQUITY)} color="#8b5cf6" />
       </div>
-      <ReportTable title="Assets" data={sectionRows(bs.data, 'ASSET')} columns={[{ title: 'Account', dataIndex: 'code', render: (v) => <span className="font-mono font-semibold text-[12px] text-[#003366]">{v}</span> }, moneyCol('value')]} />
-      <ReportTable title="Liabilities" data={sectionRows(bs.data, 'LIABILITY')} columns={[{ title: 'Account', dataIndex: 'code', render: (v) => <span className="font-mono font-semibold text-[12px] text-[#003366]">{v}</span> }, moneyCol('value')]} />
-      <ReportTable title="Equity" data={sectionRows(bs.data, 'EQUITY')} columns={[{ title: 'Account', dataIndex: 'code', render: (v) => <span className="font-mono font-semibold text-[12px] text-[#003366]">{v}</span> }, moneyCol('value')]} />
+      <ReportTable title="Assets" data={sectionRows(bs.data, 'ASSET')} columns={[{ title: 'Account', dataIndex: 'code', render: accountCell }, moneyCol('value')]} />
+      <ReportTable title="Liabilities" data={sectionRows(bs.data, 'LIABILITY')} columns={[{ title: 'Account', dataIndex: 'code', render: accountCell }, moneyCol('value')]} />
+      <ReportTable title="Equity" data={sectionRows(bs.data, 'EQUITY')} columns={[{ title: 'Account', dataIndex: 'code', render: accountCell }, moneyCol('value')]} />
       <Card className="nex-card" styles={{ body: { padding: 20 } }}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <Space split={<Divider type="vertical" />} wrap>

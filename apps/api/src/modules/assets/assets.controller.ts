@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, BadRequestException, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -28,7 +28,12 @@ export class AssetsController {
     return out;
   }
 
-  @Get() assets(@Req() req: any) { return this.prisma.asset.findMany({ where: { companyId: companyIdOf(req.user) }, include: { assetCategory: true }, orderBy: { name: 'asc' } }); }
+  @Get() async assets(@Req() req: any) {
+    const list = await this.prisma.asset.findMany({ where: { companyId: companyIdOf(req.user) }, include: { assetCategory: true }, orderBy: { name: 'asc' } });
+    // Single authoritative Net Book Value (cost − accumulated depreciation) so the
+    // register rows, dashboard and reports always reconcile.
+    return list.map((a: any) => ({ ...a, bookValue: Number((Number(a.cost) - Number(a.accumulatedDepreciation || 0)).toFixed(2)) }));
+  }
   @Post() async createAsset(@Req() req: any, @Body() dto: AssetDto) {
     const companyId = companyIdOf(req.user);
     const assetNo = dto.assetNo || await this.numbering.next(companyId, 'AST');
@@ -61,11 +66,18 @@ export class AssetsController {
     await this.audit.log(companyId, req.user.sub, 'DEPRECIATE', 'Asset', asset.id, { amount: Number(amount.toFixed(2)) });
     return updated;
   }
+  private async assertPostingDate(companyId: string, date: Date) {
+    const period = await this.prisma.fiscalPeriod.findFirst({ where: { companyId, startDate: { lte: date }, endDate: { gte: date } } });
+    if (period && (period.status === 'CLOSED' || period.status === 'LOCKED')) throw new BadRequestException(`Depreciation cannot be posted to a closed period (${period.name}).`);
+    if (period && period.status === 'FUTURE') throw new BadRequestException(`Depreciation cannot be posted to a future period (${period.name}).`);
+  }
+
   @Post('depreciation-run') async runDepreciation(@Req() req: any, @Body() body: { period?: string }) {
     const companyId = companyIdOf(req.user);
     const period = body.period || new Date().toISOString().slice(0, 7);
     const existing = await this.prisma.depreciationRun.findFirst({ where: { companyId, period } });
-    if (existing) throw new Error('Depreciation already run for this period');
+    if (existing) throw new BadRequestException('Depreciation already run for this period');
+    await this.assertPostingDate(companyId, new Date(`${period}-01`));
     const assets = await this.prisma.asset.findMany({ where: { companyId, status: 'ACTIVE' }, include: { assetCategory: true } });
     const accounts = await this.ensureLedgerAccounts(companyId);
     const run = await this.prisma.depreciationRun.create({ data: { companyId, period } });
@@ -95,6 +107,7 @@ export class AssetsController {
     const proceeds = Number(body.proceeds || 0);
     const bookValue = Number(asset.cost) - Number(asset.accumulatedDepreciation);
     const gainLoss = proceeds - bookValue;
+    await this.assertPostingDate(companyId, body.disposalDate ? new Date(body.disposalDate) : new Date());
     const accounts = await this.ensureLedgerAccounts(companyId);
     const assetAcc = await this.prisma.ledgerAccount.findFirst({ where: { companyId, code: asset.assetCategory?.assetAccount || '1500' } });
     const accDep = await this.prisma.ledgerAccount.findFirst({ where: { companyId, code: asset.assetCategory?.accumulatedDepreciationAccount || '1509' } });

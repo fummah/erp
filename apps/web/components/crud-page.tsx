@@ -62,6 +62,8 @@ export type CrudPageProps = {
   noPagination?: boolean;
   extra?: React.ReactNode;
   createLabel?: string;
+  createSubmitLabel?: string;
+  editSubmitLabel?: string;
   statusTag?: (record: any) => { text: string; color: string };
   emptyText?: React.ReactNode;
   sources?: string[];
@@ -83,6 +85,7 @@ export function CrudPage(props: CrudPageProps) {
     title, subtitle, path, columns, fields = [], createPayload, editPayload, editValues,
     rowActions = [], search, idKey = 'id', hideCreate, hideEdit, canDelete, deleteUrl,
     noPagination, extra, createLabel = 'New', statusTag, documentType,
+    createSubmitLabel = 'Save', editSubmitLabel = 'Save',
   } = props;
   const qc = useQueryClient();
   const meta = useMeta();
@@ -366,7 +369,7 @@ export function CrudPage(props: CrudPageProps) {
           onClose={() => setOpen(false)}
           title={editing ? `Edit ${title}` : `New ${createLabel}`}
           width={700}
-          footer={<div className="flex items-center justify-end gap-2"><Button onClick={() => setOpen(false)}>Cancel</Button><Button type="primary" onClick={submit} loading={saving}>Save</Button></div>}
+          footer={<div className="flex items-center justify-end gap-2"><Button onClick={() => setOpen(false)}>Cancel</Button><Button type="primary" onClick={submit} loading={saving}>{editing ? editSubmitLabel : createSubmitLabel}</Button></div>}
         >
           <Form form={form} layout="vertical">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">

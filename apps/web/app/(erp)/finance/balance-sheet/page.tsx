@@ -1,12 +1,9 @@
 'use client';
-import { Card } from 'antd';
-import { BalanceSheetSection } from '@/components/finance-sections';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function BalanceSheetPage() {
-  return (
-    <div className="nex-fade">
-      <Card className="nex-card" styles={{ body: { padding: '18px 20px' } }}><BalanceSheetSection /></Card>
-    </div>
-  );
+  const router = useRouter();
+  useEffect(() => { router.replace('/finance/reports?report=balance-sheet'); }, [router]);
+  return null;
 }
-

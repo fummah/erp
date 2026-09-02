@@ -23,7 +23,7 @@ export class HrController {
     const companyId = companyIdOf(req.user);
     const employeeNo = dto.employeeNo || await this.numbering.next(companyId, 'EMP');
     const employee = await this.prisma.employee.create({
-      data: { companyId, departmentId: dto.departmentId, employeeNo, firstName: dto.firstName, lastName: dto.lastName, email: dto.email, hireDate: new Date(dto.hireDate), basicSalary: Number(dto.basicSalary), currency: dto.currency || 'USD', active: dto.active ?? true, allowances: dto.allowances as any, deductions: dto.deductions as any },
+      data: { companyId, departmentId: dto.departmentId, employeeNo, firstName: dto.firstName, lastName: dto.lastName, email: dto.email, hireDate: new Date(dto.hireDate), basicSalary: Number(dto.basicSalary), currency: dto.currency || 'USD', active: dto.active ?? true, position: dto.position, managerId: dto.managerId, contractType: dto.contractType, status: dto.status ?? 'ACTIVE', bankDetails: dto.bankDetails as any, taxDetails: dto.taxDetails as any, emergencyContact: dto.emergencyContact as any, allowances: dto.allowances as any, deductions: dto.deductions as any },
     });
     await this.audit.log(companyId, req.user.sub, 'CREATE', 'Employee', employee.id, { employeeNo });
     return employee;

@@ -295,6 +295,88 @@ export class InventoryController {
     return { rows, totalValue: Number(rows.reduce((s, r) => s + r.value, 0).toFixed(2)) };
   }
 
+  // ---------------------------------------------------------------------------
+  // Authoritative Inventory Costing & Valuation report (as-of, per item /
+  // warehouse / category, period COGS, GL reconciliation, cost exceptions).
+  // ---------------------------------------------------------------------------
+  private simCost(movements: any[], from: Date, to: Date) {
+    let qty = 0, value = 0, cogs = 0;
+    const sorted = [...movements].sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
+    for (const m of sorted) {
+      const q = Number(m.quantity || 0);
+      const isIn = ['RECEIPT', 'TRANSFER_IN', 'ADJUSTMENT_IN', 'RETURN_IN'].includes(m.type);
+      const d = new Date(m.occurredAt);
+      if (isIn) { qty += q; value += q * Number(m.unitCost || 0); }
+      else { const avg = qty > 0 ? value / qty : 0; const out = Math.min(q, qty); const removed = out * avg; value -= removed; qty -= out; if (d >= from && d <= to) cogs += removed; }
+    }
+    return { onHand: Number(qty.toFixed(4)), avgCost: Number((qty > 0.0001 ? value / qty : 0).toFixed(2)), value: Number(value.toFixed(2)), cogsPeriod: Number(cogs.toFixed(2)) };
+  }
+
+  @Get('costing-report') async costingReport(@Req() req: any, @Query() q: any) {
+    const companyId = companyIdOf(req.user);
+    const asOf = q.asOf ? new Date(String(q.asOf).concat('T23:59:59')) : new Date();
+    const from = q.from ? new Date(String(q.from)) : new Date(asOf.getFullYear(), 0, 1);
+    const to = q.to ? new Date(String(q.to).concat('T23:59:59')) : asOf;
+    const items = await this.prisma.inventoryItem.findMany({ where: { companyId }, include: { category: true } });
+    const warehouses = await this.prisma.warehouse.findMany({ where: { companyId } });
+    const whMap = new Map(warehouses.map((w) => [w.id, w]));
+    const movements = await this.prisma.stockMovement.findMany({ where: { item: { companyId }, ...(q.warehouseId ? { warehouseId: String(q.warehouseId) } : {}) }, orderBy: { occurredAt: 'asc' } });
+    const byItem: Record<string, any[]> = {}; const byItemWh: Record<string, any[]> = {}; const lastMove: Record<string, Date> = {};
+    for (const m of movements) {
+      (byItem[m.itemId] = byItem[m.itemId] || []).push(m);
+      (byItemWh[`${m.itemId}__${m.warehouseId}`] = byItemWh[`${m.itemId}__${m.warehouseId}`] || []).push(m);
+      if (!lastMove[m.itemId] || new Date(m.occurredAt) > lastMove[m.itemId]) lastMove[m.itemId] = new Date(m.occurredAt);
+    }
+
+    let totalValue = 0, units = 0, itemsInStock = 0, cogsPeriod = 0, negative = 0, missingCost = 0;
+    const rows: any[] = [];
+    const byWh: Record<string, { warehouseId: string; name: string; items: number; units: number; value: number }> = {};
+    const byCat: Record<string, { categoryId: string | null; name: string; items: number; units: number; value: number; pct: number }> = {};
+    for (const it of items) {
+      if (q.categoryId && it.categoryId !== q.categoryId) continue;
+      const ms = byItem[it.id] || [];
+      const s = this.simCost(ms, from, to);
+      const onHand = s.onHand; const val = s.value;
+      if (onHand > 0) itemsInStock++;
+      units += Math.max(onHand, 0);
+      totalValue += val; cogsPeriod += s.cogsPeriod;
+      if (onHand < 0) negative++;
+      if (onHand > 0 && s.avgCost <= 0.0001) missingCost++;
+      const status = onHand < 0 ? 'NEGATIVE' : (onHand > 0 && s.avgCost <= 0.0001) ? 'MISSING_COST' : 'NORMAL';
+      const inventoryAccountId = it.inventoryAssetAccountId;
+      rows.push({ itemId: it.id, sku: it.sku, name: it.name, unit: it.unit, categoryId: it.categoryId, category: it.itemCategory || it.category?.name || '', onHand, avgCost: s.avgCost, value: val, lastCost: it.purchaseCost != null ? Number(it.purchaseCost) : null, lastMovement: lastMove[it.id] || null, costingMethod: it.costingMethod || 'Weighted Average', status, inventoryAccountId, cogsAccountId: it.cogsAccountId });
+      // per-warehouse / per-category aggregation (value by item, split across warehouse qty)
+      const catKey = it.categoryId || 'none';
+      if (!byCat[catKey]) byCat[catKey] = { categoryId: it.categoryId, name: it.itemCategory || it.category?.name || 'Uncategorised', items: 0, units: 0, value: 0, pct: 0 };
+      byCat[catKey].items += onHand > 0 ? 1 : 0; byCat[catKey].units += Math.max(onHand, 0); byCat[catKey].value += val;
+      for (const [k, wms] of Object.entries(byItemWh)) {
+        const [iid, wid] = k.split('__');
+        if (iid !== it.id) continue;
+        const ws = this.simCost(wms, from, to);
+        if (!byWh[wid]) byWh[wid] = { warehouseId: wid, name: whMap.get(wid)?.name || 'Warehouse', items: 0, units: 0, value: 0 };
+        byWh[wid].items += ws.onHand > 0 ? 1 : 0; byWh[wid].units += Math.max(ws.onHand, 0); byWh[wid].value += ws.value;
+      }
+    }
+    const catList = Object.values(byCat).sort((a: any, b: any) => b.value - a.value).map((c: any) => ({ ...c, pct: totalValue ? Number(((c.value / totalValue) * 100).toFixed(1)) : 0 }));
+    const whList = Object.values(byWh).sort((a: any, b: any) => b.value - a.value);
+
+    // GL inventory asset reconciliation (as-of).
+    const assetIds = [...new Set(items.map((i) => i.inventoryAssetAccountId).filter(Boolean))];
+    let control: number | null = null;
+    if (assetIds.length) {
+      const agg = await this.prisma.journalLine.aggregate({ where: { accountId: { in: assetIds as string[] }, journal: { companyId, status: 'POSTED', date: { lte: asOf } } }, _sum: { debit: true, credit: true } });
+      control = Number((Number(agg._sum.debit || 0) - Number(agg._sum.credit || 0)).toFixed(2));
+    }
+
+    return {
+      asOf: q.asOf || null,
+      summary: { inventoryValue: Number(totalValue.toFixed(2)), itemsInStock, unitsOnHand: Math.round(units), cogsPeriod: Number(cogsPeriod.toFixed(2)), negativeStock: negative, missingCost },
+      rows,
+      warehouses: whList, categories: catList,
+      reconciliation: { subledger: Number(totalValue.toFixed(2)), control, difference: control == null ? null : Number((totalValue - control).toFixed(2)) },
+    };
+  }
+
   @Get('reorder') async reorder(@Req() req: any) {
     const companyId = companyIdOf(req.user);
     const items = await this.prisma.inventoryItem.findMany({ where: { companyId, active: true, type: { not: 'SERVICE' } } });

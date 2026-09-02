@@ -21,7 +21,8 @@ export class PostingService {
 
   async postJournal(companyId: string, opts: { date: Date; description: string; reference?: string; sourceType: string; sourceId?: string; lines: JournalLine[] }) {
     const period = await this.prisma.fiscalPeriod.findFirst({ where: { companyId, startDate: { lte: opts.date }, endDate: { gte: opts.date } } });
-    if (period && period.status === 'CLOSED') throw new BadRequestException(`Posting blocked: ${period.name} is closed`);
+    if (period && period.status === 'CLOSED') throw new BadRequestException(`Posting blocked: ${period.name} is closed. Transactions cannot be posted to this accounting period. Choose an open posting date or request the period to be reopened.`);
+    if (period && period.status === 'FUTURE') throw new BadRequestException(`Posting blocked: ${period.name} is a future period and is not yet open.`);
     const byCode = await this.accountsByCode(companyId);
     for (const l of opts.lines) await this.requireAccount(byCode, l.code);
     const number = await this.numbering.next(companyId, 'JE');

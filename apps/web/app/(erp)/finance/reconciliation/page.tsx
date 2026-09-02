@@ -1,6 +1,6 @@
 'use client';
-import { Reconciliation } from '@/components/finance-sections';
+import { BankReconciliation } from '@/components/finance/bank-reconciliation';
 
 export default function ReconciliationPage() {
-  return <div className="nex-fade"><Reconciliation /></div>;
+  return <div className="nex-fade"><BankReconciliation /></div>;
 }
