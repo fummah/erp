@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, DatePicker, Divider, Form, Input, InputNumber, Modal, Popconfirm, Select, Tag, message } from 'antd';
+import { Button, DatePicker, Divider, Form, Input, InputNumber, Modal, Popconfirm, Select, Tag, Tooltip, message } from 'antd';
 import { ArrowLeftOutlined, CheckOutlined, DeleteOutlined, EyeOutlined, MailOutlined, PlusOutlined, PrinterOutlined, DownloadOutlined, SwapOutlined, LinkOutlined, StopOutlined, CloseOutlined, TruckOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import dayjs from 'dayjs';
@@ -32,15 +32,28 @@ function custAddress(c: any) { return [c.address1, c.address2, c.city, c.state, 
 function employeeOptions(employees: any[] | undefined) {
   return (employees || []).map((e: any) => ({ label: `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.email || e.employeeNo || e.id, value: e.id }));
 }
-function applyCustomer(id: string, form: any, customers: any[]) {
+import { fetchCustomerDocumentDefaults, resolveProductLinePatch, productOptions, dueDateFromTerms } from '@/components/sales/customer-defaults';
+/** Shared hydration path — same service as Quote/Invoice (billing + shipping + terms + tax). */
+async function applyCustomerDefaults(id: string, form: any, customers: any[]) {
   const c = (customers || []).find((x: any) => x.id === id);
-  if (!c) return;
+  const d = await fetchCustomerDocumentDefaults(id);
   setTimeout(() => {
     try {
-      if (c.email) form.setFieldValue('email', c.email);
-      const addr = custAddress(c);
-      if (addr) { form.setFieldValue('billingAddress', addr); form.setFieldValue('shippingAddress', addr); }
-      if (c.phone) form.setFieldValue('phone', c.phone);
+      if (d) {
+        if (d.email) form.setFieldValue('email', d.email);
+        if (d.billingAddress) form.setFieldValue('billingAddress', d.billingAddress);
+        form.setFieldValue('shippingAddress', d.shippingAddress || d.billingAddress || 'Same as Billing');
+        if (d.terms) form.setFieldValue('terms', d.terms);
+        if (d.defaultTaxRate) form.setFieldValue('taxRateId', d.defaultTaxRate);
+        if (c?.phone) form.setFieldValue('phone', c.phone);
+      } else if (c) {
+        if (c.email) form.setFieldValue('email', c.email);
+        const addr = custAddress(c);
+        if (addr) { form.setFieldValue('billingAddress', addr); form.setFieldValue('shippingAddress', addr); }
+        if (c.phone) form.setFieldValue('phone', c.phone);
+        if (c.paymentTerms) form.setFieldValue('terms', c.paymentTerms);
+        if (Number(c.defaultTaxRate)) form.setFieldValue('taxRateId', Number(c.defaultTaxRate));
+      }
     } catch { /* ignore */ }
   }, 0);
 }
@@ -72,15 +85,17 @@ export function SalesOrderForm({ record, onSaved, initial }: { record?: any; onS
 
   useEffect(() => {
     if (record) {
-      form.setFieldsValue({ customerId: record.customer?.id, orderNo: record.orderNo, orderDate: record.orderDate ? dayjs(record.orderDate) : dayjs(), expectedDate: record.expectedDate ? dayjs(record.expectedDate) : null, customerReference: record.customerReference, salesperson: record.salesperson, projectId: record.projectId, branchId: record.branchId, warehouseId: record.warehouseId, currency: record.currency || 'USD', exchangeRate: Number(record.exchangeRate || 1), terms: record.notes, billingAddress: record.billingAddress, shippingAddress: record.shippingAddress, customerMessage: record.customerMessage, internalMemo: record.internalMemo });
+      form.setFieldsValue({ customerId: record.customer?.id, orderNo: record.orderNo, orderDate: record.orderDate ? dayjs(record.orderDate) : dayjs(), expectedDate: record.expectedDate ? dayjs(record.expectedDate) : null, customerReference: record.customerReference, salesperson: record.salesperson, projectId: record.projectId, branchId: record.branchId, warehouseId: record.warehouseId, currency: record.currency || 'USD', exchangeRate: Number(record.exchangeRate || 1), terms: record.terms, billingAddress: record.billingAddress, shippingAddress: record.shippingAddress, customerMessage: record.customerMessage, internalMemo: record.internalMemo });
       setLines((record.lines || []).map((l: any, i: number) => ({ key: i + 1, itemId: l.itemId, description: l.description, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), discount: Number(l.discount || 0), taxRate: Number(l.taxRate) })));
     } else {
       form.resetFields();
       form.setFieldsValue({ orderDate: dayjs(), currency: 'USD', exchangeRate: 1, branchId: meta.data?.branches?.[0]?.id, customerId: initial?.customerId });
       setLines(record ? [] : [{ key: 1, description: '', quantity: 1, unitPrice: 0, discount: 0, taxRate: defaultTax }]);
+      // Customer Details → New Order: hydrate billing + shipping + terms + tax defaults.
+      if (initial?.customerId && meta.data?.customers?.length) applyCustomerDefaults(initial.customerId, form, meta.data.customers);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [record]);
+  }, [record, meta.data?.customers?.length]);
 
   const totals = useMemo(() => { const net = lines.reduce((s, l) => s + lineTotal(l).net, 0); const tax = lines.reduce((s, l) => s + lineTotal(l).tax, 0); return { net, tax, total: net + tax }; }, [lines]);
 
@@ -121,6 +136,16 @@ export function SalesOrderForm({ record, onSaved, initial }: { record?: any; onS
 
   const customers = meta.data?.customers || [];
   const taxOptions = (meta.data?.taxRates || []).map((t: any) => ({ label: `${t.name} (${Number(t.rate)}%)`, value: Number(t.rate) }));
+  const orderItemOptions = productOptions(meta.data?.items);
+
+  /** Product selected/changed → re-resolve Rate from PricingService (respects document currency). */
+  async function onOrderProductChange(key: number, itemId: string) {
+    const customerId = form.getFieldValue('customerId');
+    const currency = form.getFieldValue('currency') || 'USD';
+    const { patch, warning } = await resolveProductLinePatch(itemId, meta.data?.items, customerId, currency);
+    updateLine(key, patch);
+    if (warning) message.warning(warning);
+  }
 
   return (
     <>
@@ -128,7 +153,7 @@ export function SalesOrderForm({ record, onSaved, initial }: { record?: any; onS
       <div className="nex-card p-6">
         <Form form={form} layout="vertical">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
-          <Form.Item label="Customer" name="customerId" className="!mb-3" rules={[{ required: true, message: 'Select a customer' }]}><Select showSearch optionFilterProp="label" placeholder="Select customer" options={customerOptions(customers)} onChange={(v) => applyCustomer(v, form, customers)} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setCustOpen(true)}>Add customer</Button></>)} /></Form.Item>
+          <Form.Item label="Customer" name="customerId" className="!mb-3" rules={[{ required: true, message: 'Select a customer' }]}><Select showSearch optionFilterProp="label" placeholder="Select customer" options={customerOptions(customers)} onChange={(v) => applyCustomerDefaults(v, form, customers)} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setCustOpen(true)}>Add customer</Button></>)} /></Form.Item>
           <Form.Item label="Sales Order Number" name="orderNo" className="!mb-3"><Input placeholder="Auto-generated if blank" /></Form.Item>
           <Form.Item label="Order Date" name="orderDate" className="!mb-3" rules={[{ required: true }]}><DatePicker className="w-full" /></Form.Item>
           <Form.Item label="Expected Delivery" name="expectedDate" className="!mb-3"><DatePicker className="w-full" /></Form.Item>
@@ -171,10 +196,10 @@ export function SalesOrderForm({ record, onSaved, initial }: { record?: any; onS
             <div className="grid grid-cols-[1.2fr_1.7fr_0.6fr_0.9fr_0.8fr_0.9fr_40px] gap-3 px-3 py-2 text-[12px] font-semibold text-[#64748b] uppercase tracking-wide"><span>Product</span><span>Description</span><span>Qty</span><span>Rate</span><span>Discount</span><span>Amount</span><span /></div>
             {lines.map((l) => (
               <div key={l.key} className="grid grid-cols-[1.2fr_1.7fr_0.6fr_0.9fr_0.8fr_0.9fr_40px] gap-3 items-center py-2 border-t border-[#f0f1f6]">
-                <Select className="w-full" showSearch optionFilterProp="label" placeholder="Product" options={(meta.data?.items || []).map((i: any) => ({ label: i.name, value: i.id }))} value={l.itemId} onChange={(v) => updateLine(l.key, { itemId: v, description: (meta.data?.items || []).find((i: any) => i.id === v)?.name || l.description })} />
+                <Select className="w-full" showSearch optionFilterProp="label" placeholder="Product" options={orderItemOptions} value={l.itemId} onChange={(v) => onOrderProductChange(l.key, v)} />
                 <Input value={l.description} onChange={(e) => updateLine(l.key, { description: e.target.value })} placeholder="Description" />
                 <InputNumber className="w-full" min={0} value={l.quantity} onChange={(v) => updateLine(l.key, { quantity: Number(v || 0) })} />
-                <InputNumber className="w-full" min={0} prefix="$" value={l.unitPrice} onChange={(v) => updateLine(l.key, { unitPrice: Number(v || 0) })} />
+                <Tooltip title="Automatically populated from the customer's price list or the product's default sales price. You may edit it if you have permission."><InputNumber className="w-full" min={0} prefix="$" value={l.unitPrice} onChange={(v) => updateLine(l.key, { unitPrice: Number(v || 0) })} /></Tooltip>
                 <InputNumber className="w-full" min={0} prefix="$" value={l.discount} onChange={(v) => updateLine(l.key, { discount: Number(v || 0) })} />
                 <div className="text-[13px] font-semibold text-[#171a2e] text-right">{fmtMoney(lineTotal(l).total)}</div>
                 <Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeLine(l.key)} />
@@ -226,7 +251,7 @@ export function SalesOrderForm({ record, onSaved, initial }: { record?: any; onS
             <Form.Item label="First Name" name="firstName"><Input /></Form.Item>
             <Form.Item label="Last Name" name="lastName"><Input /></Form.Item>
           </div>
-          <Form.Item label="Display Name" name="name" rules={[{ required: true, message: 'Name is required' }]}><Input /></Form.Item>
+          <Form.Item label="Display Name" name="name" extra="If left blank, NexusERP will generate the display name from the company or customer name."><Input placeholder="Leave blank to auto-generate" /></Form.Item>
           <Form.Item label="Company" name="companyName"><Input /></Form.Item>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
             <Form.Item label="Email" name="email"><Input /></Form.Item>

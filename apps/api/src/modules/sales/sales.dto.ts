@@ -78,7 +78,8 @@ export class CreateCreditNoteDto {
 
 export class CustomerDto {
   @IsOptional() @IsString() code?: string;
-  @IsString() name!: string;
+  // Optional: when blank the backend generates it (companyName → first+last → code).
+  @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() firstName?: string;
   @IsOptional() @IsString() lastName?: string;
   @IsOptional() @IsString() companyName?: string;
@@ -91,12 +92,14 @@ export class CustomerDto {
   @IsOptional() @IsString() state?: string;
   @IsOptional() @IsString() zip?: string;
   @IsOptional() @IsString() country?: string;
+  @IsOptional() @IsString() paymentTerms?: string;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() taxStatus?: string;
   @IsOptional() @Type(() => Number) @IsNumber() defaultTaxRate?: number;
   @IsOptional() @IsString() tin?: string;
   @IsOptional() @IsString() vatNumber?: string;
   @IsOptional() @Type(() => Number) @IsNumber() creditLimit?: number;
+  @IsOptional() @IsString() priceListId?: string;
   @IsOptional() @IsIn(['ACTIVE', 'INACTIVE']) status?: string;
 }
 

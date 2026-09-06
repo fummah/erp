@@ -6,7 +6,15 @@ import { PERMISSIONS, ROLE_DEFS, expandPerms } from './permissions';
 export class PermissionService implements OnModuleInit {
   constructor(private prisma: PrismaService) {}
 
-  async onModuleInit() { await this.ensurePermissions(); }
+  async onModuleInit() {
+    await this.ensurePermissions();
+    // Re-sync system roles for all existing companies so new permission codes
+    // (e.g. integrations.*) reach already-provisioned tenants without a reset.
+    const companies = await this.prisma.company.findMany({ select: { id: true }, take: 500 });
+    for (const c of companies) {
+      try { await this.ensureCompanyRoles(c.id); } catch { /* keep going */ }
+    }
+  }
 
   async ensurePermissions() {
     for (const p of PERMISSIONS) {

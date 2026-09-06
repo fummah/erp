@@ -460,3 +460,19 @@ body {
   #payslip-print .print-note { display: none !important; }
   #payslip-print .ant-drawer-close, .ant-drawer-header, .ant-drawer-extra, .ant-drawer-footer { display: none !important; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Print — Reports & BI printable report sheet                         */
+/* ------------------------------------------------------------------ */
+@media print {
+  body.report-print * { visibility: hidden; }
+  body.report-print #report-print, body.report-print #report-print * { visibility: visible; }
+  body.report-print #report-print { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
+  body.report-print .nex-sidebar, body.report-print .ant-layout-header, body.report-print .ant-tabs-nav,
+  body.report-print .no-print { display: none !important; }
+  #report-print .ant-table { font-size: 11px; }
+  #report-print .report-total-row { font-weight: 700; }
+}
+
+/* Report drill-down drawer table tuning */
+.report-drill .ant-table-thead > tr > th { background: #f8fafc; font-size: 12px; }

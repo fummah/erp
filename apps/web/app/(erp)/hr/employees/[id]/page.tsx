@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Col, Descriptions, Row, Skeleton, Space, Table, Tabs, Tag, message } from 'antd';
 import { ArrowLeftOutlined, EditOutlined, MoreOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Can } from '@/components/Can';
 import { StatusPill, DetailItem } from '@/components/sales-ui';
@@ -129,13 +130,7 @@ export default function EmployeeDetailPage() {
         { key: 'attendance', label: 'Attendance', children: (
           <div className="nex-card p-4"><Table rowKey="id" size="small" dataSource={myAtt} columns={empAttCols} pagination={false} /></div>
         ) },
-        { key: 'performance', label: 'Performance', children: (
-          <div className="nex-card p-5">
-            <DetailItem label="Current cycle" value={perf?.currentCycle?.name || 'No active cycle'} />
-            <DetailItem label="Reviews" value={reviewRows.length} />
-            {reviewRows.map((r: any) => <div key={r.id} className="mt-3 border-t border-[#f0f1f6] pt-3"><DetailItem label="Cycle" value={r.cycle?.name} /><DetailItem label="Overall" value={r.overallRating} /><DetailItem label="Status" value={r.status} /></div>)}
-          </div>
-        ) },
+        { key: 'performance', label: 'Performance', children: <EmployeePerformanceTab employeeId={id} perf={perf} reviewRows={reviewRows} /> },
         { key: 'payroll', label: 'Payroll', children: (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="nex-card p-5">
@@ -163,4 +158,61 @@ export default function EmployeeDetailPage() {
       <EmployeeDrawer open={editOpen} onClose={() => setEditOpen(false)} onSaved={() => qc.invalidateQueries({ queryKey: ['/hr/employees'] })} editing={e} />
     </div>
   );
+}
+
+function EmployeePerformanceTab({ employeeId, perf, reviewRows }: { employeeId: string; perf: any; reviewRows: any[] }) {
+  const history = useQuery({ queryKey: ['perf-history', employeeId], queryFn: () => api(`/performance/employees/${employeeId}/history`) });
+  const rows = history.data || [];
+  const current = rows[0];
+  const approved = rows.filter((r: any) => r.score != null);
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <PerfCard label="Current Cycle" value={current?.cycle || perf?.currentCycle?.name || 'No active cycle'} />
+        <PerfCard label="Current Score" value={current?.score != null ? `${Number(current.score).toFixed(1)}%` : '—'} />
+        <PerfCard label="Submission Status" value={current ? (current.kpiCompletion === 100 ? 'SUBMITTED' : 'IN PROGRESS') : '—'} />
+        <PerfCard label="Final Result" value={current?.result || '—'} color={current?.result === 'PASS' ? '#16a34a' : current?.result === 'FAIL' ? '#dc2626' : undefined} />
+        <PerfCard label="Band" value={current?.band || '—'} />
+      </div>
+
+      {approved.length > 1 && (
+        <div className="nex-card border rounded-lg p-4">
+          <div className="text-[13px] font-semibold text-[#171a2e] mb-2">Performance Trend (approved results)</div>
+          <div className="flex items-end gap-3 h-28">
+            {[...approved].reverse().map((r: any) => (
+              <div key={r.id} className="flex flex-col items-center gap-1 flex-1 max-w-16">
+                <div className="text-[11px] font-semibold text-[#171a2e]">{Number(r.score).toFixed(0)}%</div>
+                <div className="w-full rounded-t" style={{ height: `${Math.max(6, Math.min(100, Number(r.score)) * 0.8)}px`, background: Number(r.score) >= 70 ? 'linear-gradient(180deg,#1d5fb5,#003366)' : '#dc2626' }} />
+                <div className="text-[10px] text-[#94a3b8] truncate w-full text-center">{r.cycle}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="nex-card p-0 overflow-hidden">
+        <div className="text-[13px] font-semibold text-[#171a2e] px-5 py-4 border-b">Assessment History</div>
+        <Table rowKey="id" size="small" dataSource={rows} pagination={false} columns={[
+          { title: 'Cycle', dataIndex: 'cycle' },
+          { title: 'Template', dataIndex: 'templateName' },
+          { title: 'Score', width: 90, align: 'right', render: (_v: any, r: any) => r.score != null ? <span className="font-semibold">{Number(r.score).toFixed(1)}%</span> : '—' },
+          { title: 'KPI Completion', width: 120, align: 'right', render: (_v: any, r: any) => `${r.kpiCompletion ?? 0}%` },
+          { title: 'Result', width: 90, render: (_v: any, r: any) => r.result ? <StatusPill status={r.result} /> : '—' },
+          { title: 'Status', width: 140, render: (_v: any, r: any) => <StatusPill status={r.status} /> },
+          { title: 'Actions', width: 90, align: 'right', render: () => <Link href={`/performance?tab=assessments`}><Button size="small">Open</Button></Link> },
+        ] as ColumnsType<any>} />
+      </div>
+      {reviewRows?.length > 0 && (
+        <div className="nex-card p-5">
+          <div className="text-[13px] font-semibold text-[#171a2e] mb-2">Legacy reviews</div>
+          {reviewRows.map((r: any) => <div key={r.id} className="mt-2 border-t border-[#f0f1f6] pt-2"><DetailItem label="Cycle" value={r.cycle?.name} /><DetailItem label="Overall" value={r.overallRating} /><DetailItem label="Status" value={r.status} /></div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PerfCard({ label, value, color }: { label: string; value: any; color?: string }) {
+  return <div className="nex-card border rounded-lg p-4 text-center"><div className="text-[12px] font-semibold text-[#64748b]">{label}</div><div className="text-[16px] font-bold text-[#171a2e] mt-1 truncate" style={color ? { color } : undefined}>{value}</div></div>;
 }

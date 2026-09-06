@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, DatePicker, Divider, Form, Input, InputNumber, Modal, Select, Switch, Tag, message } from 'antd';
+import { Button, DatePicker, Divider, Form, Input, InputNumber, Modal, Select, Switch, Tag, Tooltip, message } from 'antd';
 import { ArrowLeftOutlined, CheckOutlined, DeleteOutlined, EyeOutlined, MailOutlined, PlusOutlined, PrinterOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import dayjs from 'dayjs';
@@ -40,18 +40,29 @@ function StatusTile({ label, value, tone }: { label: string; value?: string; ton
 function custAddress(c: any) {
   return [c.address1, c.address2, c.city, c.state, c.zip, c.country].filter(Boolean).join(', ');
 }
-function applyCustomer(id: string, form: any, customers: any[]) {
+import { fetchCustomerDocumentDefaults, resolveProductLinePatch, productOptions, dueDateFromTerms } from '@/components/sales/customer-defaults';
+/** Shared hydration path (spec: identical for Quote/Order/Invoice, manual select or ?customer= entry). */
+async function applyCustomerDefaults(id: string, form: any, customers: any[], opts?: { shipping?: boolean }) {
   const c = (customers || []).find((x: any) => x.id === id);
-  if (!c) return;
-  // Defer the autofill: setting form fields synchronously inside a Select
-  // onChange triggers React's "circular references" warning (nested state
-  // update during the change commit). A microtask keeps it safe.
+  const d = await fetchCustomerDocumentDefaults(id);
   setTimeout(() => {
     try {
-      if (c.email) form.setFieldValue('email', c.email);
-      const addr = custAddress(c);
-      if (addr) { form.setFieldValue('billingAddress', addr); form.setFieldValue('address', addr); }
-      if (c.phone) form.setFieldValue('phone', c.phone);
+      if (d) {
+        if (d.email) form.setFieldValue('email', d.email);
+        if (d.billingAddress) form.setFieldValue('billingAddress', d.billingAddress);
+        if (opts?.shipping) form.setFieldValue('shippingAddress', d.shippingAddress || d.billingAddress || 'Same as Billing');
+        if (d.terms) form.setFieldValue('terms', d.terms);
+        if (d.defaultTaxRate) form.setFieldValue('taxRateId', d.defaultTaxRate);
+        if (c?.phone) form.setFieldValue('phone', c.phone);
+      } else if (c) {
+        // Fallback: hydrate directly from the meta customer record
+        if (c.email) form.setFieldValue('email', c.email);
+        const addr = custAddress(c);
+        if (addr) { form.setFieldValue('billingAddress', addr); if (opts?.shipping) form.setFieldValue('shippingAddress', addr); }
+        if (c.phone) form.setFieldValue('phone', c.phone);
+        if (c.paymentTerms) form.setFieldValue('terms', c.paymentTerms);
+        if (Number(c.defaultTaxRate)) form.setFieldValue('taxRateId', Number(c.defaultTaxRate));
+      }
     } catch { /* ignore */ }
   }, 0);
 }
@@ -65,7 +76,7 @@ const INVOICE_STATUS = [
 const QUOTE_STATUS = ['Draft', 'Open', 'Accepted', 'Rejected', 'Expired'];
 const COUNTRIES = ['United States', 'Canada', 'United Kingdom', 'Zimbabwe', 'South Africa', 'Australia', 'Germany', 'France', 'India', 'China', 'Japan', 'Brazil', 'United Arab Emirates', 'Nigeria', 'Kenya'];
 
-type Line = { key: number; itemId?: string; description: string; quantity: number; unitPrice: number; taxRate: number };
+type Line = { key: number; itemId?: string; description: string; quantity: number; unitPrice: number; unit?: string; taxRate: number };
 function lineTotal(l: Line) { const net = Number(l.quantity || 0) * Number(l.unitPrice || 0); const tax = net * (Number(l.taxRate || 0) / 100); return { net, tax, total: net + tax }; }
 
 function BackBar({ to, title, actions }: { to: string; title: string; actions?: React.ReactNode }) {
@@ -106,9 +117,11 @@ export function InvoiceForm({ record, onSaved, initial }: { record?: any; onSave
       form.resetFields();
       form.setFieldsValue({ invoiceDate: dayjs(), terms: 'Net 30', status: 'DRAFT', branchId: meta.data?.branches?.[0]?.id, customerId: initial?.customerId });
       setLines([{ key: 1, description: '', quantity: 1, unitPrice: 0, taxRate: defaultTax }]);
+      // Customer Details → New Invoice (or quote/order link): hydrate defaults once the meta data is ready.
+      if (initial?.customerId && meta.data?.customers?.length) applyCustomerDefaults(initial.customerId, form, meta.data.customers);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [record]);
+  }, [record, meta.data?.customers?.length]);
 
   const totals = useMemo(() => { const net = lines.reduce((s, l) => s + lineTotal(l).net, 0); const tax = lines.reduce((s, l) => s + lineTotal(l).tax, 0); return { net, tax, total: net + tax }; }, [lines]);
 
@@ -139,6 +152,16 @@ export function InvoiceForm({ record, onSaved, initial }: { record?: any; onSave
 
   const customers = meta.data?.customers || [];
   const taxOptions = (meta.data?.taxRates || []).map((t: any) => ({ label: `${t.name} (${Number(t.rate)}%)`, value: Number(t.rate) }));
+  const itemOptions = productOptions(meta.data?.items);
+
+  /** Product selected/changed → re-resolve Rate from PricingService; manual rates only refresh on product change. */
+  async function onProductChange(key: number, itemId: string) {
+    const customerId = form.getFieldValue('customerId');
+    const currency = form.getFieldValue('currency') || 'USD';
+    const { patch, warning } = await resolveProductLinePatch(itemId, meta.data?.items, customerId, currency);
+    updateLine(key, patch);
+    if (warning) message.warning(warning);
+  }
 
   const docActions = (<>
     <Button icon={<EyeOutlined />} onClick={() => setViewer({ autoPrint: false })}>Preview</Button>
@@ -160,11 +183,11 @@ export function InvoiceForm({ record, onSaved, initial }: { record?: any; onSave
       <div className="nex-card p-6">
         <Form form={form} layout="vertical" className="grid grid-cols-1 md:grid-cols-3 gap-x-4" onValuesChange={() => setDirty(true)}>
           <Form.Item label="Customer" name="customerId" className="!mb-3" rules={[{ required: true, message: 'Select a customer' }]}>
-            <Select showSearch placeholder="Select customer" optionFilterProp="label" options={customerOptions(customers)} onChange={(v) => applyCustomer(v, form, customers)} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setCustOpen(true)}>Add customer</Button></>)} />
+            <Select showSearch placeholder="Select customer" optionFilterProp="label" options={customerOptions(customers)} onChange={(v) => applyCustomerDefaults(v, form, customers)} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setCustOpen(true)}>Add customer</Button></>)} />
           </Form.Item>
           <Form.Item label="Invoice Number" name="invoiceNo" className="!mb-3"><Input placeholder="Auto-generated if blank" /></Form.Item>
-          <Form.Item label="Payment Terms" name="terms" className="!mb-3"><Select options={TERMS.map((t) => ({ label: t, value: t }))} /></Form.Item>
-          <Form.Item label="Invoice Date" name="invoiceDate" className="!mb-3"><DatePicker className="w-full" /></Form.Item>
+          <Form.Item label="Payment Terms" name="terms" className="!mb-3"><Select options={TERMS.map((t) => ({ label: t, value: t }))} onChange={(t) => { const dd = dueDateFromTerms(t, form.getFieldValue('invoiceDate')); if (dd) form.setFieldValue('dueDate', dayjs(dd)); }} /></Form.Item>
+          <Form.Item label="Invoice Date" name="invoiceDate" className="!mb-3"><DatePicker className="w-full" onChange={(d) => { const dd = dueDateFromTerms(form.getFieldValue('terms'), d); if (dd) form.setFieldValue('dueDate', dayjs(dd)); }} /></Form.Item>
           <Form.Item label="Due Date" name="dueDate" className="!mb-3"><DatePicker className="w-full" /></Form.Item>
           <Form.Item label="Email" name="email" className="!mb-3"><Input placeholder="Auto-filled from customer" /></Form.Item>
           <Form.Item label="Billing Address" name="billingAddress" className="!mb-3 md:col-span-2"><Input.TextArea rows={2} placeholder="Billing address" /></Form.Item>
@@ -194,10 +217,10 @@ export function InvoiceForm({ record, onSaved, initial }: { record?: any; onSave
             <div className="grid grid-cols-[1.3fr_1.8fr_0.7fr_1fr_1fr_40px] gap-3 px-3 py-2 text-[12px] font-semibold text-[#64748b] uppercase tracking-wide"><span>Product</span><span>Description</span><span>Qty</span><span>Rate</span><span>Amount</span><span /></div>
             {lines.map((l) => (
               <div key={l.key} className="grid grid-cols-[1.3fr_1.8fr_0.7fr_1fr_1fr_40px] gap-3 items-center py-2 border-t border-[#f0f1f6]">
-                <Select className="w-full" showSearch optionFilterProp="label" placeholder="Product" options={(meta.data?.items || []).map((i: any) => ({ label: i.name, value: i.id }))} value={l.itemId} onChange={(v) => updateLine(l.key, { itemId: v, description: (meta.data?.items || []).find((i: any) => i.id === v)?.name || l.description })} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setItemModalKey(l.key)}>Add new item</Button></>)} />
+                <Select className="w-full" showSearch optionFilterProp="label" placeholder="Product" options={itemOptions} value={l.itemId} onChange={(v) => onProductChange(l.key, v)} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setItemModalKey(l.key)}>Add new item</Button></>)} />
                 <Input value={l.description} onChange={(e) => updateLine(l.key, { description: e.target.value })} placeholder="Description" />
                 <InputNumber className="w-full" min={0} value={l.quantity} onChange={(v) => updateLine(l.key, { quantity: Number(v || 0) })} />
-                <InputNumber className="w-full" min={0} prefix="$" value={l.unitPrice} onChange={(v) => updateLine(l.key, { unitPrice: Number(v || 0) })} />
+                <Tooltip title="Automatically populated from the customer's price list or the product's default sales price. You may edit it if you have permission."><InputNumber className="w-full" min={0} prefix="$" value={l.unitPrice} onChange={(v) => updateLine(l.key, { unitPrice: Number(v || 0) })} /></Tooltip>
                 <div className="text-[13px] font-semibold text-[#171a2e] text-right">{fmtMoney(lineTotal(l).total)}</div>
                 <Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeLine(l.key)} />
               </div>
@@ -264,9 +287,11 @@ export function QuoteForm({ record, onSaved, initial }: { record?: any; onSaved:
       form.resetFields();
       form.setFieldsValue({ quoteDate: dayjs(), validUntil: dayjs().add(30, 'day'), status: 'Draft', customerId: initial?.customerId });
       setLines([{ key: 1, description: '', quantity: 1, unitPrice: 0, taxRate: 0 }]);
+      // Customer Details → New Quote: hydrate the same shared defaults.
+      if (initial?.customerId && meta.data?.customers?.length) applyCustomerDefaults(initial.customerId, form, meta.data.customers);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [record]);
+  }, [record, meta.data?.customers?.length]);
 
   const totals = useMemo(() => { const net = lines.reduce((s, l) => s + lineTotal(l).net, 0); const tax = lines.reduce((s, l) => s + lineTotal(l).tax, 0); return { net, tax, total: net + tax }; }, [lines]);
 
@@ -275,6 +300,14 @@ export function QuoteForm({ record, onSaved, initial }: { record?: any; onSaved:
   function addLine() { setLines((p) => [...p, { key: p.length + 1, description: '', quantity: 1, unitPrice: 0, taxRate: 0 }]); }
 
   const taxOptions = (meta.data?.taxRates || []).map((t: any) => ({ label: `${t.name} (${Number(t.rate)}%)`, value: Number(t.rate) }));
+  const quoteItemOptions = productOptions(meta.data?.items);
+  /** Quote product selected/changed → resolve Rate from PricingService (sales price, never cost). */
+  async function onQuoteProductChange(key: number, itemId: string) {
+    const customerId = form.getFieldValue('customerId');
+    const { patch, warning } = await resolveProductLinePatch(itemId, meta.data?.items, customerId, 'USD');
+    updateLine(key, patch);
+    if (warning) message.warning(warning);
+  }
   async function submit() {
     try {
       const v = await form.validateFields();
@@ -313,14 +346,14 @@ export function QuoteForm({ record, onSaved, initial }: { record?: any; onSaved:
       <div className="nex-card p-6">
         <Form form={form} layout="vertical" className="grid grid-cols-1 md:grid-cols-3 gap-x-4" onValuesChange={() => setDirty(true)}>
           <Form.Item label="Customer" name="customerId" className="!mb-3" rules={[{ required: true, message: 'Select a customer' }]}>
-            <Select showSearch placeholder="Select customer" optionFilterProp="label" options={customerOptions(meta.data?.customers)} onChange={(v) => applyCustomer(v, form, meta.data?.customers || [])} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setCustOpen(true)}>Add customer</Button></>)} />
+            <Select showSearch placeholder="Select customer" optionFilterProp="label" options={customerOptions(meta.data?.customers)} onChange={(v) => applyCustomerDefaults(v, form, meta.data?.customers || [])} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setCustOpen(true)}>Add customer</Button></>)} />
           </Form.Item>
           <Form.Item label="Quote Number" name="quotationNo" className="!mb-3"><Input placeholder="Auto-generated if blank" /></Form.Item>
           <Form.Item label="Email" name="email" className="!mb-3"><Input placeholder="Auto-filled from customer" /></Form.Item>
           <Form.Item label="Quote Date" name="quoteDate" className="!mb-3"><DatePicker className="w-full" /></Form.Item>
           <Form.Item label="Expiry Date" name="validUntil" className="!mb-3"><DatePicker className="w-full" /></Form.Item>
           <Form.Item label="Tax Rate (%)" name="taxRateId" className="!mb-3"><Select allowClear placeholder="Default line tax rate" options={taxOptions} onChange={(v) => { setDefaultTax(v || 0); setLines((prev) => prev.map((l) => ({ ...l, taxRate: v || 0 }))); }} /></Form.Item>
-          <Form.Item label="Address" name="address" className="!mb-3 md:col-span-2"><Input.TextArea rows={2} placeholder="Address" /></Form.Item>
+          <Form.Item label="Address" name="address" className="!mb-3 md:col-span-2"><Input.TextArea rows={2} placeholder="Billing address — auto-filled from customer" /></Form.Item>
           <Form.Item label="Status" name="status" className="!mb-3"><Select options={QUOTE_STATUS.map((s) => ({ label: s, value: s }))} /></Form.Item>
         </Form>
         <FormSection title="Line Items" />
@@ -329,10 +362,10 @@ export function QuoteForm({ record, onSaved, initial }: { record?: any; onSaved:
             <div className="grid grid-cols-[1.3fr_1.6fr_0.7fr_1fr_1fr_40px] gap-3 px-3 py-2 text-[12px] font-semibold text-[#64748b] uppercase tracking-wide"><span>Product</span><span>Description</span><span>Qty</span><span>Rate</span><span>Amount</span><span /></div>
             {lines.map((l) => (
               <div key={l.key} className="grid grid-cols-[1.3fr_1.6fr_0.7fr_1fr_1fr_40px] gap-3 items-center py-2 border-t border-[#f0f1f6]">
-                <Select className="w-full" showSearch optionFilterProp="label" placeholder="Select product" options={(meta.data?.items || []).map((i: any) => ({ label: i.name, value: i.id }))} value={l.itemId} onChange={(v) => updateLine(l.key, { itemId: v, description: (meta.data?.items || []).find((i: any) => i.id === v)?.name || l.description })} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setItemModalKey(l.key)}>Add new item</Button></>)} />
+                <Select className="w-full" showSearch optionFilterProp="label" placeholder="Select product" options={quoteItemOptions} value={l.itemId} onChange={(v) => onQuoteProductChange(l.key, v)} popupRender={(menu) => (<><div className="p-1">{menu}</div><Divider style={{ margin: '6px 0' }} /><Button type="text" size="small" block icon={<PlusOutlined />} onClick={() => setItemModalKey(l.key)}>Add new item</Button></>)} />
                 <Input value={l.description} onChange={(e) => updateLine(l.key, { description: e.target.value })} placeholder="Description" />
                 <InputNumber className="w-full" min={0} value={l.quantity} onChange={(v) => updateLine(l.key, { quantity: Number(v || 0) })} placeholder="Qty" />
-                <InputNumber className="w-full" min={0} prefix="$" value={l.unitPrice} onChange={(v) => updateLine(l.key, { unitPrice: Number(v || 0) })} placeholder="Rate" />
+                <Tooltip title="Automatically populated from the customer's price list or the product's default sales price. You may edit it if you have permission."><InputNumber className="w-full" min={0} prefix="$" value={l.unitPrice} onChange={(v) => updateLine(l.key, { unitPrice: Number(v || 0) })} placeholder="Rate" /></Tooltip>
                 <div className="text-[13px] font-semibold text-[#171a2e] text-right">{fmtMoney(lineTotal(l).total)}</div>
                 <Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeLine(l.key)} />
               </div>
@@ -387,7 +420,7 @@ function QuickAddCustomer({ open, onClose, onCreated }: { open: boolean; onClose
       <Form form={form} layout="vertical">
         <Form.Item label="First Name" name="firstName"><Input placeholder="First name" /></Form.Item>
         <Form.Item label="Last Name" name="lastName"><Input placeholder="Last name" /></Form.Item>
-        <Form.Item label="Display Name" name="name" rules={[{ required: true, message: 'Name is required' }]}><Input placeholder="Customer name" /></Form.Item>
+        <Form.Item label="Display Name" name="name" extra="If left blank, NexusERP will generate the display name from the company or customer name."><Input placeholder="Leave blank to auto-generate" /></Form.Item>
         <Form.Item label="Company" name="companyName"><Input placeholder="Company" /></Form.Item>
         <Form.Item label="Email" name="email"><Input placeholder="email@example.com" /></Form.Item>
         <Form.Item label="Phone" name="phone"><Input placeholder="Phone" /></Form.Item>
@@ -414,7 +447,7 @@ function QuickAddItem({ open, onClose, onCreated }: { open: boolean; onClose: ()
     try {
       const v = await form.validateFields();
       setSaving(true);
-      const res = await api('/inventory/items', { method: 'POST', body: JSON.stringify({ name: v.name, unit: v.unit || 'EA', reorderLevel: Number(v.reorderLevel || 0) }) });
+      const res = await api('/inventory/items', { method: 'POST', body: JSON.stringify({ name: v.name, unit: v.unit || 'EA', reorderLevel: Number(v.reorderLevel || 0), sellingPrice: Number(v.sellingPrice || 0) }) });
       qc.invalidateQueries({ queryKey: ['meta'] });
       message.success('Item created');
       form.resetFields();
@@ -427,6 +460,7 @@ function QuickAddItem({ open, onClose, onCreated }: { open: boolean; onClose: ()
       <Form form={form} layout="vertical">
         <Form.Item label="Name" name="name" rules={[{ required: true, message: 'Name is required' }]}><Input placeholder="Item name" /></Form.Item>
         <Form.Item label="Unit" name="unit"><Input placeholder="EA, KG, BOX…" /></Form.Item>
+        <Form.Item label="Selling Price" name="sellingPrice" extra="Used to auto-populate the Rate on quotes, orders and invoices."><InputNumber className="w-full" min={0} prefix="$" /></Form.Item>
         <Form.Item label="Reorder Level" name="reorderLevel"><InputNumber className="w-full" min={0} /></Form.Item>
       </Form>
     </Modal>

@@ -175,11 +175,35 @@ export class HrController {
     if (run.status === 'LOCKED') throw new BadRequestException('Payroll run is locked');
     const employees = await this.prisma.employee.findMany({ where: { companyId, active: true } });
     if (!employees.length) throw new BadRequestException('No active employees');
+    // Approved performance incentives assigned to this payroll month become payslip inputs (source: INC reference). Never duplicated:
+    // incentives already attached to THIS run are re-included on reprocess; incentives attached to any other run are excluded.
+    const runRef = `PAYROLL-${run.year}-${run.period}`;
+    const approvedIncentives = await this.prisma.performanceIncentive.findMany({
+      where: { companyId, OR: [{ status: 'APPROVED' }, { status: { in: ['SENT_TO_PAYROLL', 'PAID'] }, payrollInputRef: runRef }] },
+    });
+    const byEmployee = new Map<string, any[]>();
+    for (const inc of approvedIncentives) {
+      const assessment = await this.prisma.employeePerformanceAssessment.findUnique({ where: { id: inc.assessmentId }, include: { cycle: true } });
+      const ref = inc.payrollInputRef || inc.reference;
+      // Assignment: incentive approved before this run, not yet attached to another run.
+      if (assessment) {
+        const periodEnd = new Date(assessment.cycle.periodEnd);
+        const periodMonth = periodEnd.getMonth() + 1;
+        const periodYear = periodEnd.getFullYear();
+        if (periodMonth !== run.period || periodYear !== run.year) continue;
+      }
+      const list = byEmployee.get(inc.employeeId) || [];
+      list.push(inc);
+      byEmployee.set(inc.employeeId, list);
+    }
     let totalGross = 0, totalDeductions = 0, totalNet = 0, totalEmployerNssa = 0;
     await this.prisma.$transaction(async (tx) => {
       await tx.payslip.deleteMany({ where: { payrollRunId: run.id } });
       for (const e of employees) {
-        const allowances = (e.allowances as any) || {};
+        const incentives = byEmployee.get(e.id) || [];
+        const bonusTotal = incentives.reduce((s, i) => s + Number(i.amount), 0);
+        const allowances = { ...((e.allowances as any) || {}) };
+        if (incentives.length) allowances['Performance Bonus'] = Number((allowances['Performance Bonus'] || 0)) + bonusTotal;
         const allowanceTotal = Object.values(allowances).reduce((s: number, v: any) => s + Number(v || 0), 0);
         const otherDeductionsRaw = (e.deductions as any) || {};
         const otherDeductions = Object.values(otherDeductionsRaw).reduce((s: number, v: any) => s + Number(v || 0), 0);
@@ -187,10 +211,15 @@ export class HrController {
         const stat = await this.statutory(companyId, gross, new Date(run.year, run.period - 1, 28));
         const net = gross - stat.paye - stat.employeeNssa - otherDeductions;
         totalGross += gross; totalDeductions += stat.paye + stat.employeeNssa + otherDeductions; totalNet += net; totalEmployerNssa += stat.employerNssa;
-        await tx.payslip.create({ data: { payrollRunId: run.id, employeeId: e.id, basicSalary: round2(Number(e.basicSalary)), grossPay: round2(gross), payeTax: stat.paye, nssaDeduction: stat.employeeNssa, otherDeductions: round2(otherDeductions), netPay: round2(net), employeeNssa: stat.employeeNssa, employerNssa: stat.employerNssa, allowances, deductions: otherDeductionsRaw } });
+        const bonusRefs = incentives.map((i) => ({ reference: i.reference, amount: Number(i.amount), assessmentId: i.assessmentId, score: Number(i.finalScore), cycle: i.planName }));
+        await tx.payslip.create({ data: { payrollRunId: run.id, employeeId: e.id, basicSalary: round2(Number(e.basicSalary)), grossPay: round2(gross), payeTax: stat.paye, nssaDeduction: stat.employeeNssa, otherDeductions: round2(otherDeductions), netPay: round2(net), employeeNssa: stat.employeeNssa, employerNssa: stat.employerNssa, allowances, deductions: otherDeductionsRaw, bonusAmount: round2(bonusTotal), bonusReferences: bonusRefs.length ? bonusRefs : undefined } });
+        for (const inc of incentives) {
+          await tx.performanceIncentive.update({ where: { id: inc.id }, data: { status: 'SENT_TO_PAYROLL', payrollInputRef: `PAYROLL-${run.year}-${run.period}`, paidAt: null } });
+        }
       }
       await tx.payrollRun.update({ where: { id: run.id }, data: { status: 'PROCESSED', processedAt: new Date(), employeeCount: employees.length, totalGross: round2(totalGross), totalDeductions: round2(totalDeductions), totalNet: round2(totalNet) } });
     });
+    await this.prisma.performanceIncentive.updateMany({ where: { companyId, status: 'SENT_TO_PAYROLL', payrollInputRef: `PAYROLL-${run.year}-${run.period}` }, data: { paidAt: new Date() } });
     await this.posting.postJournal(companyId, {
       date: new Date(run.year, run.period - 1, 28), description: `Payroll ${run.period}/${run.year}`, reference: `PR-${run.year}-${run.period}`, sourceType: 'PAYROLL', sourceId: run.id,
       lines: [
@@ -531,9 +560,11 @@ export class HrController {
   @Post('employees/:id/employment-change') employmentChange(@Req() req: any, @Param('id') id: string, @Body() body: any) { return this.hr.recordEmploymentChange(req, id, body); }
 
   // ----- Performance -----
-  @Get('performance-cycles') performanceCycles(@Req() req: any) { return this.prisma.performanceCycle.findMany({ where: { companyId: companyIdOf(req.user) }, orderBy: { startDate: 'desc' } }); }
+  @Get('performance-cycles') performanceCycles(@Req() req: any) { return this.prisma.performanceCycle.findMany({ where: { companyId: companyIdOf(req.user) }, orderBy: { createdAt: 'desc' } }); }
   @Post('performance-cycles') createPerformanceCycle(@Req() req: any, @Body() body: any) {
-    return this.prisma.performanceCycle.create({ data: { companyId: companyIdOf(req.user), name: body.name, periodType: body.periodType || 'QUARTERLY', startDate: new Date(body.startDate), endDate: new Date(body.endDate) } });
+    const companyId = companyIdOf(req.user);
+    const start = new Date(body.startDate); const end = new Date(body.endDate);
+    return this.prisma.performanceCycle.create({ data: { companyId, name: body.name, periodType: body.periodType || 'QUARTERLY', cycleType: body.periodType || 'QUARTERLY', periodStart: start, periodEnd: end, startDate: start, endDate: end, submissionOpens: start, employeeDeadline: end, managerDeadline: end, status: 'DRAFT' } });
   }
   @Get('performance-reviews') performanceReviews(@Req() req: any) {
     return this.prisma.performanceReview.findMany({ where: { companyId: companyIdOf(req.user) }, include: { employee: true, cycle: true }, orderBy: { createdAt: 'desc' } });

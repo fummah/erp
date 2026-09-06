@@ -1,5 +1,6 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Calendar, DatePicker, Drawer, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -24,6 +25,7 @@ const PAYMENT_STATUS_TONE: Record<string, string> = { UNPAID: 'grey', PARTIALLY_
 
 export default function Hr() {
   const qc = useQueryClient();
+  const params = useSearchParams();
   const dash = useQuery({ queryKey: ['/hr/dashboard'], queryFn: () => api('/hr/dashboard') });
   const employees = useQuery({ queryKey: ['/hr/employees'], queryFn: () => api('/hr/employees') });
   const departments = useQuery({ queryKey: ['/hr/departments'], queryFn: () => api('/hr/departments') });
@@ -40,7 +42,7 @@ export default function Hr() {
   const qaAssessments = useQuery({ queryKey: ['/hr/qa-assessments'], queryFn: () => api('/hr/qa-assessments') });
   const incentives = useQuery({ queryKey: ['/hr/employee-incentives'], queryFn: () => api('/hr/employee-incentives') });
 
-  const [tab, setTab] = useState('employees');
+  const [tab, setTab] = useState(params.get('tab') || 'employees');
   const [empDrawer, setEmpDrawer] = useState(false);
   const [editingEmp, setEditingEmp] = useState<any>(null);
   const [leaveTab, setLeaveTab] = useState('requests');
@@ -51,6 +53,7 @@ export default function Hr() {
   const [fSearch, setFSearch] = useState('');
   const [holidayOpen, setHolidayOpen] = useState(false);
   const [deptOpen, setDeptOpen] = useState(false);
+  const [editingDept, setEditingDept] = useState<any>(null);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [payrollOpen, setPayrollOpen] = useState(false);
   const [previewPay, setPreviewPay] = useState<any>(null);
@@ -61,6 +64,12 @@ export default function Hr() {
 
   const d = dash.data || {};
   const meta = useMeta();
+
+  // Deep links (e.g. from the Departments tab actions) preselect the employee department filter.
+  useEffect(() => {
+    const dept = params.get('departmentId');
+    if (dept) setFDepart(dept);
+  }, [params]);
 
   function refresh() {
     ['/hr/employees', '/hr/departments', '/hr/leave-requests', '/hr/leave-balances', '/hr/leave-types', '/hr/holidays', '/hr/attendance', '/hr/attendance/summary', '/hr/attendance/exceptions', '/hr/payroll-runs', '/hr/payslips', '/hr/performance-reviews', '/hr/qa-assessments', '/hr/employee-incentives'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -95,7 +104,15 @@ export default function Hr() {
     { title: 'Code', dataIndex: 'code', width: 110 },
     { title: 'Department', dataIndex: 'name' },
     { title: 'Branch', render: (_v, r) => r.branch?.name || '—' },
-    { title: 'Employees', width: 110, align: 'right', render: (_v, r) => (employees.data || []).filter((e: any) => e.departmentId === r.id).length },
+    { title: 'Employees', width: 100, align: 'right', render: (_v, r) => (employees.data || []).filter((e: any) => e.departmentId === r.id).length },
+    { title: 'Actions', width: 300, align: 'right', render: (_v, r) => (
+      <Space size={4}>
+        <Can permission="hr.employees.manage"><Button size="small" onClick={() => { setEditingDept(r); deptForm.setFieldsValue({ name: r.name, branchId: r.branchId, code: r.code }); setDeptOpen(true); }}>Edit</Button></Can>
+        <Button size="small" onClick={() => window.open(`/hr?tab=employees&departmentId=${r.id}`, '_self')}>View Employees</Button>
+        <Link href={`/performance?tab=templates&departmentId=${r.id}`}><Button size="small">KPI Templates</Button></Link>
+        <Link href={`/performance?tab=assessments&departmentId=${r.id}`}><Button size="small">Performance</Button></Link>
+      </Space>
+    ) },
   ];
 
   const leaveCols: ColumnsType<any> = [
@@ -193,7 +210,15 @@ export default function Hr() {
 
   // modal submit handlers
   async function submitLeave() { const v = await leaveForm.validateFields().catch(() => null); if (!v) return; try { await api('/hr/leave-requests', { method: 'POST', body: JSON.stringify({ employeeId: v.employeeId, leaveType: v.leaveType, startDate: v.startDate.format('YYYY-MM-DD'), endDate: v.endDate.format('YYYY-MM-DD'), halfDay: v.halfDay, reason: v.reason }) }); message.success('Leave requested — days auto-calculated'); setLeaveOpen(false); leaveForm.resetFields(); refresh(); } catch (e: any) { message.error(e.message); } }
-  async function submitDept() { const v = await deptForm.validateFields().catch(() => null); if (!v) return; try { await api('/hr/departments', { method: 'POST', body: JSON.stringify(v) }); message.success('Department created'); setDeptOpen(false); deptForm.resetFields(); refresh(); } catch (e: any) { message.error(e.message); } }
+  async function submitDept() {
+    const v = await deptForm.validateFields().catch(() => null); if (!v) return;
+    try {
+      if (editingDept) await api(`/hr/departments/${editingDept.id}`, { method: 'PATCH', body: JSON.stringify({ name: v.name }) });
+      else await api('/hr/departments', { method: 'POST', body: JSON.stringify(v) });
+      message.success(editingDept ? 'Department updated' : 'Department created');
+      setDeptOpen(false); setEditingDept(null); deptForm.resetFields(); refresh();
+    } catch (e: any) { message.error(e.message); }
+  }
   async function submitHoliday() { const v = await holidayForm.validateFields().catch(() => null); if (!v) return; try { await api('/hr/holidays', { method: 'POST', body: JSON.stringify({ name: v.name, date: v.date.format('YYYY-MM-DD'), recurring: v.recurring }) }); message.success('Holiday added'); setHolidayOpen(false); holidayForm.resetFields(); refresh(); } catch (e: any) { message.error(e.message); } }
   async function submitPayroll() { const v = await payrollForm.validateFields().catch(() => null); if (!v) return; try { await api('/hr/payroll-runs', { method: 'POST', body: JSON.stringify({ period: v.period, year: v.year }) }); message.success('Payroll run created'); setPayrollOpen(false); payrollForm.resetFields(); refresh(); } catch (e: any) { message.error(e.message); } }
   async function publishPayslip() { if (!previewPay) return; try { await api(`/hr/payslips/${previewPay.id}/publish`, { method: 'POST' }); message.success('Payslip published'); qc.invalidateQueries({ queryKey: ['/hr/payslips'] }); setPreviewPay((p: any) => ({ ...p, status: 'PUBLISHED' })); } catch (e: any) { message.error(e.message); } }
@@ -202,7 +227,10 @@ export default function Hr() {
     <div className="nex-fade">
       <div className="flex items-center justify-between mb-5">
         <div><h1 className="text-[26px] font-bold text-[#171a2e] leading-tight">HR & Payroll</h1><p className="text-[13px] text-[#64748b] mt-1">Employees, leave, attendance, performance and payroll</p></div>
-        <Button icon={<ReloadOutlined />} onClick={refresh}>Refresh</Button>
+        <Space>
+          <Link href="/performance"><Button type="primary" ghost>Performance & QA Module</Button></Link>
+          <Button icon={<ReloadOutlined />} onClick={refresh}>Refresh</Button>
+        </Space>
       </div>
 
       {tab === 'employees' && (
@@ -229,7 +257,7 @@ export default function Hr() {
             </div>
           ) },
           { key: 'departments', label: 'Departments', children: (
-            <div><div className="px-4 py-3"><Can permission="hr.employees.manage"><Button type="primary" icon={<PlusOutlined />} onClick={() => setDeptOpen(true)}>+ Department</Button></Can></div><Table rowKey="id" loading={departments.isLoading} dataSource={departments.data || []} columns={deptCols} pagination={false} /></div>
+            <div><div className="px-4 py-3"><Can permission="hr.employees.manage"><Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingDept(null); deptForm.resetFields(); setDeptOpen(true); }}>+ Department</Button></Can></div><Table rowKey="id" loading={departments.isLoading} dataSource={departments.data || []} columns={deptCols} pagination={false} /></div>
           ) },
           { key: 'leave', label: 'Leave', children: (
             <div className="px-2 py-2">
@@ -311,10 +339,10 @@ export default function Hr() {
         </Form>
       </Modal>
 
-      <Modal open={deptOpen} title="New department" onCancel={() => setDeptOpen(false)} onOk={submitDept} okText="Create" destroyOnClose>
+      <Modal open={deptOpen} title={editingDept ? `Edit department — ${editingDept.name}` : 'New department'} onCancel={() => { setDeptOpen(false); setEditingDept(null); }} onOk={submitDept} okText={editingDept ? 'Save' : 'Create'} destroyOnClose>
         <Form form={deptForm} layout="vertical" className="mt-2">
-          <Form.Item label="Branch" name="branchId" rules={[{ required: true }]}><Select allowClear placeholder="Select branch" options={(meta.data?.branches || []).map((o: any) => ({ label: o.name, value: o.id }))} /></Form.Item>
-          <Form.Item label="Code" name="code"><Input /></Form.Item>
+          <Form.Item label="Branch" name="branchId" rules={[{ required: true }]}><Select allowClear placeholder="Select branch" disabled={!!editingDept} options={(meta.data?.branches || []).map((o: any) => ({ label: o.name, value: o.id }))} /></Form.Item>
+          <Form.Item label="Code" name="code"><Input disabled={!!editingDept} /></Form.Item>
           <Form.Item label="Name" name="name" rules={[{ required: true }]}><Input /></Form.Item>
         </Form>
       </Modal>
@@ -359,6 +387,12 @@ export default function Hr() {
               <div className="px-5 py-4">
                 <div className="text-[12px] font-semibold uppercase tracking-wide text-[#64748b] mb-2">Earnings</div>
                 <div className="flex justify-between text-[13px] py-2 border-b border-[#f0f1f6]"><span className="text-[#344054]">Base salary</span><span className="font-medium text-[#171a2e]">{fmtMoney(previewPay.basicSalary)}</span></div>
+                {Number(previewPay.bonusAmount || 0) > 0 && (
+                  <div className="flex justify-between text-[13px] py-2 border-b border-[#f0f1f6]">
+                    <span className="text-[#344054]">Performance Bonus<br /><span className="text-[11px] text-[#1d5fb5]">{(previewPay.bonusReferences || []).map((b: any) => `${b.reference} · ${b.cycle}`).join(', ')}</span></span>
+                    <span className="font-medium text-[#171a2e]">{fmtMoney(previewPay.bonusAmount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-[13px] py-2 border-b border-[#f0f1f6]"><span className="text-[#344054]">Gross pay</span><span className="font-medium text-[#171a2e]">{fmtMoney(previewPay.grossPay)}</span></div>
                 <div className="text-[12px] font-semibold uppercase tracking-wide text-[#64748b] mt-5 mb-2">Deductions</div>
                 <div className="flex justify-between text-[13px] py-2 border-b border-[#f0f1f6]"><span className="text-[#344054]">PAYE tax</span><span>{fmtMoney(previewPay.payeTax)}</span></div>

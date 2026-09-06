@@ -11,6 +11,7 @@ import { BankingModule } from './modules/banking/banking.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { HrModule } from './modules/hr/hr.module';
+import { PerformanceModule } from './modules/performance/performance.module';
 import { CrmModule } from './modules/crm/crm.module';
 import { AssetsModule } from './modules/assets/assets.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
@@ -28,5 +29,5 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { DocumentTemplateModule } from './modules/document-templates/document-template.module';
 import { DocumentTrailModule } from './modules/document-trail/document-trail.module';
 import { HealthController } from './health.controller';
-@Module({imports:[ConfigModule.forRoot({isGlobal:true}),PrismaModule,CommonModule,AuthModule,DashboardModule,CompanyModule,SalesModule,FinanceModule,InventoryModule,ProcurementModule,HrModule,CrmModule,AssetsModule,ComplianceModule,FiscalisationModule,IntegrationsModule,AdminModule,PlatformModule,ProjectsModule,ApprovalsModule,ReportsModule,SystemModule,DocumentsModule,DeliveryModule,SettingsModule,DocumentTemplateModule,DocumentTrailModule,BankingModule],controllers:[HealthController]})
+@Module({imports:[ConfigModule.forRoot({isGlobal:true}),PrismaModule,CommonModule,AuthModule,DashboardModule,CompanyModule,SalesModule,FinanceModule,InventoryModule,ProcurementModule,HrModule,PerformanceModule,CrmModule,AssetsModule,ComplianceModule,FiscalisationModule,IntegrationsModule,AdminModule,PlatformModule,ProjectsModule,ApprovalsModule,ReportsModule,SystemModule,DocumentsModule,DeliveryModule,SettingsModule,DocumentTemplateModule,DocumentTrailModule,BankingModule],controllers:[HealthController]})
 export class AppModule {}

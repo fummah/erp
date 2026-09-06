@@ -67,7 +67,7 @@ export default function CustomerCenter() {
   });
 
   function openAdd() { setEditing(null); form.resetFields(); form.setFieldsValue({ creditLimit: 0, defaultTaxRate: Number(prefs.data?.vatDefault || 0), taxStatus: 'Taxable', status: 'ACTIVE' }); setCustomerOpen(true); }
-  function openEdit(c: any) { setEditing(c); form.resetFields(); form.setFieldsValue({ name: c.name, firstName: c.firstName, lastName: c.lastName, companyName: c.companyName, email: c.email, phone: c.phone, mobile: c.mobile, address1: c.address1, address2: c.address2, city: c.city, state: c.state, zip: c.zip, country: c.country, notes: c.notes, tin: c.tin, vatNumber: c.vatNumber, creditLimit: Number(c.creditLimit || 0), taxStatus: c.taxStatus || 'Taxable', defaultTaxRate: Number(c.defaultTaxRate || 0), status: c.status || 'ACTIVE' }); setCustomerOpen(true); }
+  function openEdit(c: any) { setEditing(c); form.resetFields(); form.setFieldsValue({ name: c.name, firstName: c.firstName, lastName: c.lastName, companyName: c.companyName, email: c.email, phone: c.phone, mobile: c.mobile, address1: c.address1, address2: c.address2, city: c.city, state: c.state, zip: c.zip, country: c.country, paymentTerms: c.paymentTerms, priceListId: c.priceListId, notes: c.notes, tin: c.tin, vatNumber: c.vatNumber, creditLimit: Number(c.creditLimit || 0), taxStatus: c.taxStatus || 'Taxable', defaultTaxRate: Number(c.defaultTaxRate || 0), status: c.status || 'ACTIVE' }); setCustomerOpen(true); }
   async function saveCustomer() {
     try {
       const v = await form.validateFields();
@@ -179,7 +179,7 @@ export default function CustomerCenter() {
         <Form form={form} layout="vertical" className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
           <Form.Item label="First Name" name="firstName" className="!mb-3"><Input placeholder="First name" /></Form.Item>
           <Form.Item label="Last Name" name="lastName" className="!mb-3"><Input placeholder="Last name" /></Form.Item>
-          <Form.Item label="Display Name" name="name" className="!mb-3" rules={[{ required: true, message: 'Name is required' }]}><Input placeholder="Auto-generated if blank" /></Form.Item>
+          <Form.Item label="Display Name" name="name" className="!mb-3" extra="If left blank, NexusERP will generate the display name from the company or customer name."><Input placeholder="Leave blank to auto-generate" /></Form.Item>
           <Form.Item label="Company" name="companyName" className="!mb-3"><Input placeholder="Company" /></Form.Item>
           <Form.Item label="Email" name="email" className="!mb-3"><Input placeholder="email@example.com" /></Form.Item>
           <Form.Item label="Phone" name="phone" className="!mb-3"><PhoneInput country="ZW" /></Form.Item>
@@ -190,6 +190,8 @@ export default function CustomerCenter() {
           <Form.Item label="State" name="state" className="!mb-3"><Input placeholder="State / Province" /></Form.Item>
           <Form.Item label="ZIP" name="zip" className="!mb-3"><Input placeholder="ZIP / Postal code" /></Form.Item>
           <Form.Item label="Country" name="country" className="!mb-3"><Select showSearch placeholder="Select country" options={COUNTRIES.map((c) => ({ label: c, value: c }))} /></Form.Item>
+          <Form.Item label="Payment Terms" name="paymentTerms" className="!mb-3"><Select allowClear placeholder="e.g. Net 30" options={['Net 15', 'Net 30', 'Net 60', 'Due on Receipt'].map((t) => ({ label: t, value: t }))} /></Form.Item>
+          <Form.Item label="Price List" name="priceListId" className="!mb-3"><Select allowClear showSearch optionFilterProp="label" placeholder="Customer price list" options={(meta.data?.priceLists || []).map((p: any) => ({ label: `${p.name} (${p.currency})`, value: p.id }))} /></Form.Item>
           <Form.Item label="Tax ID (TIN)" name="tin" className="!mb-3"><Input placeholder="Tax identification number" /></Form.Item>
           <Form.Item label="VAT Number" name="vatNumber" className="!mb-3"><Input placeholder="VAT number" /></Form.Item>
           <Form.Item label="Credit Limit" name="creditLimit" className="!mb-3"><InputNumber className="w-full" prefix="$" min={0} /></Form.Item>

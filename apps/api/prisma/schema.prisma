@@ -11,6 +11,20 @@ enum UserStatus {
   ACTIVE
   INVITED
   SUSPENDED
+  INACTIVE
+  LOCKED
+}
+
+enum AccessScope {
+  SINGLE_BRANCH
+  SELECTED_BRANCHES
+  COMPANY_WIDE
+  PLATFORM_WIDE
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INACTIVE
 }
 
 enum InvoiceStatus {
@@ -132,17 +146,17 @@ model Tenant {
 }
 
 model Company {
-  id                        String                    @id @default(uuid())
+  id                        String                          @id @default(uuid())
   tenantId                  String
-  tenant                    Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                    Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   legalName                 String
   tradingName               String?
   code                      String
   tin                       String?
   vatNumber                 String?
-  baseCurrency              String                    @default("USD")
-  financialYearStart        Int                       @default(1)
-  active                    Boolean                   @default(true)
+  baseCurrency              String                          @default("USD")
+  financialYearStart        Int                             @default(1)
+  active                    Boolean                         @default(true)
   branches                  Branch[]
   memberships               Membership[]
   accounts                  LedgerAccount[]
@@ -204,6 +218,17 @@ model Company {
   employmentHistory         EmploymentHistory[]
   performanceCycles         PerformanceCycle[]
   performanceReviews        PerformanceReview[]
+  kpiCategories             KpiCategory[]
+  kpiTemplates              KpiTemplate[]
+  kpiTemplateVersions       KpiTemplateVersion[]
+  kpiDefinitions            KpiDefinition[]
+  performanceBands          PerformanceBand[]
+  performanceAssessments    EmployeePerformanceAssessment[]
+  performanceKpis           EmployeePerformanceKpi[]
+  performanceQaReviews      PerformanceQaReview[]
+  performanceNotifications  PerformanceNotification[]
+  performanceIncentives     PerformanceIncentive[]
+  developmentPlans          DevelopmentPlan[]
   qaTemplates               QaTemplate[]
   qaAssessments             QaAssessment[]
   incentivePlans            IncentivePlan[]
@@ -223,6 +248,7 @@ model Company {
   regulatoryReports         RegulatoryReport[]
   timesheets                Timesheet[]
   reportDefinitions         ReportDefinition[]
+  reportUserStates          ReportUserState[]
   purchaseOrders            PurchaseOrder[]
   items                     InventoryItem[]
   warehouses                Warehouse[]
@@ -252,8 +278,8 @@ model Company {
   taxRates                  TaxRate[]
   budgets                   Budget[]
   configs                   SystemConfig[]
-  createdAt                 DateTime                  @default(now())
-  updatedAt                 DateTime                  @updatedAt
+  createdAt                 DateTime                        @default(now())
+  updatedAt                 DateTime                        @updatedAt
   applicationStageHistories ApplicationStageHistory[]
   interviewScorecards       InterviewScorecard[]
 
@@ -268,6 +294,16 @@ model Branch {
   code                    String
   address                 String?
   city                    String?
+  managerId               String?
+  managerName             String?
+  phone                   String?
+  email                   String?
+  street                  String?
+  province                String?
+  postalCode              String?
+  country                 String?
+  defaultCurrency         String                   @default("USD")
+  timezone                String?
   active                  Boolean                  @default(true)
   fiscalDevices           FiscalDevice[]
   warehouses              Warehouse[]
@@ -280,20 +316,25 @@ model Branch {
   recruitmentRequisitions RecruitmentRequisition[]
   jobVacancies            JobVacancy[]
   holidays                Holiday[]
+  memberships             Membership[]             @relation("MembershipPrimaryBranch")
+  membershipBranches      MembershipBranch[]
+  auditLogs               AuditLog[]
 
   @@unique([companyId, code])
 }
 
 model Department {
-  id                      String                   @id @default(uuid())
+  id                      String                          @id @default(uuid())
   branchId                String
-  branch                  Branch                   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch                  Branch                          @relation(fields: [branchId], references: [id], onDelete: Cascade)
   name                    String
   code                    String
   employees               Employee[]
   recruitmentRequisitions RecruitmentRequisition[]
   jobVacancies            JobVacancy[]
   offers                  Offer[]
+  kpiTemplates            KpiTemplate[]
+  performanceAssessments  EmployeePerformanceAssessment[]
 
   @@unique([branchId, code])
 }
@@ -306,6 +347,12 @@ model User {
   lastName                   String
   status                     UserStatus               @default(ACTIVE)
   isPlatformAdmin            Boolean                  @default(false)
+  employeeId                 String?                  @unique
+  employee                   Employee?                @relation(fields: [employeeId], references: [id])
+  lastLoginAt                DateTime?
+  lastActivityAt             DateTime?
+  deactivatedAt              DateTime?
+  deactivationReason         String?
   emailVerifiedAt            DateTime?
   passwordResetTokenHash     String?
   passwordResetExpiresAt     DateTime?
@@ -314,23 +361,40 @@ model User {
   refreshTokens              RefreshToken[]
   mfaMethods                 MfaMethod[]
   trailEvents                DocumentTrailEvent[]
+  auditLogs                  AuditLog[]
   createdAt                  DateTime                 @default(now())
   updatedAt                  DateTime                 @updatedAt
   recruitmentRequisitions    RecruitmentRequisition[]
 }
 
 model Membership {
-  id        String           @id @default(uuid())
-  userId    String
-  tenantId  String
-  companyId String
-  role      String           @default("ADMIN")
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  roles     MembershipRole[]
+  id              String             @id @default(uuid())
+  userId          String
+  tenantId        String
+  companyId       String
+  role            String             @default("ADMIN")
+  accessScope     AccessScope        @default(COMPANY_WIDE)
+  primaryBranchId String?
+  primaryBranch   Branch?            @relation("MembershipPrimaryBranch", fields: [primaryBranchId], references: [id])
+  status          MembershipStatus   @default(ACTIVE)
+  effectiveFrom   DateTime           @default(now())
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roles           MembershipRole[]
+  branches        MembershipBranch[]
 
   @@unique([userId, companyId])
+}
+
+model MembershipBranch {
+  id           String     @id @default(uuid())
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  branchId     String
+  branch       Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, branchId])
 }
 
 model SubscriptionPlan {
@@ -420,7 +484,7 @@ model AccountSubtype {
 
 // ---------------------------------------------------------------------------
 // External Bank Connection & Bank Feed (read-only data ingestion layer).
-// Bank data is NEVER written directly to the General Ledger — it is staged here
+// Bank data is NEVER written directly to the General Ledger â€” it is staged here
 // and then matched / user-processed through the normal accounting engine.
 // ---------------------------------------------------------------------------
 model BankConnection {
@@ -554,6 +618,7 @@ model Customer {
   tin            String?
   vatNumber      String?
   creditLimit    Decimal               @default(0) @db.Decimal(18, 2)
+  paymentTerms   String?
   status         String                @default("ACTIVE")
   priceListId    String?
   invoices       SalesInvoice[]
@@ -912,91 +977,95 @@ model PriceListItem {
 }
 
 model Employee {
-  id                  String                   @id @default(uuid())
-  companyId           String
-  company             Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  departmentId        String?
-  department          Department?              @relation(fields: [departmentId], references: [id])
-  employeeNo          String
-  firstName           String
-  lastName            String
-  middleName          String?
-  preferredName       String?
-  email               String?
-  workEmail           String?
-  personalEmail       String?
-  phone               String?
-  mobile              String?
-  hireDate            DateTime
-  dateOfBirth         DateTime?
-  gender              String?
-  idType              String?
-  idNumber            String?
-  nationality         String?
-  addressLine1        String?
-  addressLine2        String?
-  city                String?
-  province            String?
-  postalCode          String?
-  country             String?
-  basicSalary         Decimal                  @default(0) @db.Decimal(18, 2)
-  currency            String                   @default("USD")
-  allowances          Json?
-  deductions          Json?
-  active              Boolean                  @default(true)
-  managerId           String?
-  position            String?
-  contractType        String?
-  workCalendarId      String?
-  workCalendar        WorkCalendar?            @relation(fields: [workCalendarId], references: [id])
-  employmentStatus    String?                  @default("ACTIVE")
-  probationEndDate    DateTime?
-  contractEndDate     DateTime?
-  payFrequency        String                   @default("MONTHLY")
-  compensationType    String                   @default("SALARIED")
-  bankDetails         Json?
-  taxDetails          Json?
-  emergencyContact    Json?
-  documents           Json?
-  status              String                   @default("ACTIVE")
-  leaveRequests       LeaveRequest[]
-  attendance          Attendance[]
-  payslips            Payslip[]
-  onboarding          EmployeeOnboarding?
-  leaveBalances       LeaveBalance[]
-  employeeBenefits    EmployeeBenefit[]
-  timesheets          Timesheet[]
-  reqHiringManaged    RecruitmentRequisition[] @relation("ReqHiringManager")
-  reqRequested        RecruitmentRequisition[] @relation("ReqRequestedBy")
-  vacancyHiring       JobVacancy[]             @relation("VacancyHiringManager")
-  vacancyRecruiting   JobVacancy[]             @relation("VacancyRecruiter")
-  ownedApplications   JobApplication[]         @relation("ApplicationOwner")
-  scorecards          InterviewScorecard[]     @relation("ScorecardReviewer")
-  hiredCandidate      Candidate[]              @relation("CandidateEmployee")
-  compensationHistory CompensationHistory[]
-  employmentHistory   EmploymentHistory[]
-  performanceReviews  PerformanceReview[]
-  qaAssessments       QaAssessment[]
-  leaveApprovals      LeaveRequest[]           @relation("LeaveApprover")
-  offerManaged        Offer[]
-  incentives          EmployeeIncentive[]
+  id                     String                          @id @default(uuid())
+  companyId              String
+  company                Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  departmentId           String?
+  department             Department?                     @relation(fields: [departmentId], references: [id])
+  employeeNo             String
+  firstName              String
+  lastName               String
+  middleName             String?
+  preferredName          String?
+  email                  String?
+  workEmail              String?
+  personalEmail          String?
+  phone                  String?
+  mobile                 String?
+  hireDate               DateTime
+  dateOfBirth            DateTime?
+  gender                 String?
+  idType                 String?
+  idNumber               String?
+  nationality            String?
+  addressLine1           String?
+  addressLine2           String?
+  city                   String?
+  province               String?
+  postalCode             String?
+  country                String?
+  basicSalary            Decimal                         @default(0) @db.Decimal(18, 2)
+  currency               String                          @default("USD")
+  allowances             Json?
+  deductions             Json?
+  active                 Boolean                         @default(true)
+  managerId              String?
+  position               String?
+  contractType           String?
+  workCalendarId         String?
+  workCalendar           WorkCalendar?                   @relation(fields: [workCalendarId], references: [id])
+  employmentStatus       String?                         @default("ACTIVE")
+  probationEndDate       DateTime?
+  contractEndDate        DateTime?
+  payFrequency           String                          @default("MONTHLY")
+  compensationType       String                          @default("SALARIED")
+  bankDetails            Json?
+  taxDetails             Json?
+  emergencyContact       Json?
+  documents              Json?
+  status                 String                          @default("ACTIVE")
+  leaveRequests          LeaveRequest[]
+  attendance             Attendance[]
+  payslips               Payslip[]
+  onboarding             EmployeeOnboarding?
+  leaveBalances          LeaveBalance[]
+  employeeBenefits       EmployeeBenefit[]
+  timesheets             Timesheet[]
+  reqHiringManaged       RecruitmentRequisition[]        @relation("ReqHiringManager")
+  reqRequested           RecruitmentRequisition[]        @relation("ReqRequestedBy")
+  vacancyHiring          JobVacancy[]                    @relation("VacancyHiringManager")
+  vacancyRecruiting      JobVacancy[]                    @relation("VacancyRecruiter")
+  ownedApplications      JobApplication[]                @relation("ApplicationOwner")
+  scorecards             InterviewScorecard[]            @relation("ScorecardReviewer")
+  hiredCandidate         Candidate[]                     @relation("CandidateEmployee")
+  compensationHistory    CompensationHistory[]
+  employmentHistory      EmploymentHistory[]
+  performanceReviews     PerformanceReview[]
+  performanceAssessments EmployeePerformanceAssessment[]
+  performanceIncentives  PerformanceIncentive[]
+  developmentPlans       DevelopmentPlan[]
+  qaAssessments          QaAssessment[]
+  leaveApprovals         LeaveRequest[]                  @relation("LeaveApprover")
+  offerManaged           Offer[]
+  incentives             EmployeeIncentive[]
+  user                   User?
 
   @@unique([companyId, employeeNo])
 }
 
 model WorkCalendar {
-  id            String         @id @default(uuid())
-  companyId     String
-  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name          String
-  description   String?
-  weekendDays   Json? // e.g. ["SATURDAY","SUNDAY"]
+  id             String         @id @default(uuid())
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  weekendDays    Json? // e.g. ["SATURDAY","SUNDAY"]
   scheduledStart String?        @default("08:00")
   scheduledEnd   String?        @default("17:00")
   breakMinutes   Int            @default(60)
-  active        Boolean        @default(true)
-  employees     Employee[]
-  leaveRequests LeaveRequest[]
+  active         Boolean        @default(true)
+  employees      Employee[]
+  leaveRequests  LeaveRequest[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -1058,17 +1127,37 @@ model EmploymentHistory {
 }
 
 model PerformanceCycle {
-  id         String              @id @default(uuid())
-  companyId  String
-  company    Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name       String
-  periodType String              @default("QUARTERLY")
-  startDate  DateTime
-  endDate    DateTime
-  status     String              @default("DRAFT")
-  reviews    PerformanceReview[]
+  id               String                          @id @default(uuid())
+  companyId        String
+  company          Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name             String
+  cycleType        String                          @default("QUARTERLY") // MONTHLY | QUARTERLY | HALF_YEARLY | ANNUAL | PROBATION | CUSTOM
+  description      String?
+  periodType       String                          @default("QUARTERLY") // legacy column kept for old reviews
+  periodStart      DateTime
+  periodEnd        DateTime
+  submissionOpens  DateTime
+  employeeDeadline DateTime
+  managerDeadline  DateTime
+  qaDeadline       DateTime?
+  approvalDeadline DateTime?
+  includeNewHires  String                          @default("NO") // NO | YES | PRORATED
+  departmentIds    Json? // restrict cycle to departments (null = all)
+  employeeIds      Json? // explicit employee list override
+  status           String                          @default("DRAFT") // DRAFT | SCHEDULED | OPEN | EMPLOYEE_SUBMISSION | MANAGER_REVIEW | QA_REVIEW | CALIBRATION | APPROVAL | COMPLETED | LOCKED
+  openedAt         DateTime?
+  completedAt      DateTime?
+  lockedAt         DateTime?
+  startDate        DateTime // legacy column kept for old reviews
+  endDate          DateTime // legacy column kept for old reviews
+  reviews          PerformanceReview[]
+  assessments      EmployeePerformanceAssessment[]
+  createdBy        String?
+  createdAt        DateTime                        @default(now())
+  updatedAt        DateTime                        @updatedAt
 
   @@index([companyId])
+  @@index([companyId, status])
 }
 
 model PerformanceReview {
@@ -1133,18 +1222,19 @@ model QaAssessment {
 }
 
 model IncentivePlan {
-  id               String              @id @default(uuid())
-  companyId        String
-  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name             String
-  eligibility      String?
-  departmentId     String?
-  threshold        Decimal?            @db.Decimal(12, 2)
-  calculation      Json?
-  maxPayout        Decimal?            @db.Decimal(12, 2)
-  payrollComponent String?
-  status           String              @default("ACTIVE")
-  incentives       EmployeeIncentive[]
+  id                    String                 @id @default(uuid())
+  companyId             String
+  company               Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name                  String
+  eligibility           String?
+  departmentId          String?
+  threshold             Decimal?               @db.Decimal(12, 2)
+  calculation           Json?
+  maxPayout             Decimal?               @db.Decimal(12, 2)
+  payrollComponent      String?
+  status                String                 @default("ACTIVE")
+  incentives            EmployeeIncentive[]
+  performanceIncentives PerformanceIncentive[]
 
   @@index([companyId])
 }
@@ -1168,6 +1258,306 @@ model EmployeeIncentive {
 
   @@index([employeeId])
   @@index([companyId])
+}
+
+// ============================= Performance Management (KPI) =============================
+
+model KpiCategory {
+  id             String          @id @default(uuid())
+  companyId      String
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  color          String?
+  active         Boolean         @default(true)
+  kpiDefinitions KpiDefinition[]
+  createdAt      DateTime        @default(now())
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model KpiTemplate {
+  id                String               @id @default(uuid())
+  companyId         String
+  company           Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  departmentId      String
+  department        Department           @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  jobRole           String? // matches Employee.position (role-specific override when set)
+  name              String
+  description       String?
+  effectiveFrom     DateTime
+  effectiveTo       DateTime?
+  passMark          Decimal              @default(70) @db.Decimal(5, 2)
+  maxAchievement    Decimal              @default(120) @db.Decimal(5, 2)
+  criticalMin       Decimal?             @db.Decimal(5, 2)
+  selfAssessment    Boolean              @default(false)
+  qaRequired        Boolean              @default(true)
+  managerQaDistinct Boolean              @default(true)
+  status            String               @default("DRAFT") // DRAFT | ACTIVE | INACTIVE | ARCHIVED
+  currentVersion    Int                  @default(1)
+  versions          KpiTemplateVersion[]
+  createdBy         String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, departmentId])
+}
+
+model KpiTemplateVersion {
+  id             String                          @id @default(uuid())
+  companyId      String
+  company        Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  templateId     String
+  template       KpiTemplate                     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  version        Int
+  name           String
+  description    String?
+  passMark       Decimal                         @default(70) @db.Decimal(5, 2)
+  maxAchievement Decimal                         @default(120) @db.Decimal(5, 2)
+  criticalMin    Decimal?                        @db.Decimal(5, 2)
+  selfAssessment Boolean                         @default(false)
+  qaRequired     Boolean                         @default(true)
+  status         String                          @default("ACTIVE") // ACTIVE | SUPERSEDED | ARCHIVED
+  effectiveFrom  DateTime
+  effectiveTo    DateTime?
+  kpis           KpiDefinition[]
+  assessments    EmployeePerformanceAssessment[]
+
+  @@unique([templateId, version])
+  @@index([companyId])
+}
+
+model KpiDefinition {
+  id                      String             @id @default(uuid())
+  companyId               String
+  company                 Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  versionId               String
+  version                 KpiTemplateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  code                    String
+  name                    String
+  description             String
+  categoryId              String?
+  category                KpiCategory?       @relation(fields: [categoryId], references: [id])
+  categoryLabel           String? // fallback display when category row removed
+  weight                  Decimal            @db.Decimal(5, 2)
+  measurementType         String             @default("NUMBER") // NUMBER | PERCENTAGE | CURRENCY | COUNT | DAYS | HOURS | RATING_SCALE | YES_NO | MANUAL_SCORE | SYSTEM_METRIC
+  direction               String             @default("HIGHER_IS_BETTER") // HIGHER_IS_BETTER | LOWER_IS_BETTER | TARGET_RANGE | PASS_FAIL
+  targetType              String             @default("NUMBER") // NUMBER | PERCENT | CURRENCY | COUNT | DAYS | HOURS | RATING | YES | NO
+  targetValue             Decimal?           @db.Decimal(18, 4)
+  targetText              String? // for YES_NO / PASS_FAIL / descriptive targets
+  unit                    String?
+  dataSource              String? // SYSTEM source key e.g. SALES_POSTED, ATTENDANCE_PCT ...
+  dataSourceLabel         String?
+  scoringMethod           String             @default("PROPORTIONAL") // PROPORTIONAL | PASS_FAIL | RATING | BINARY
+  minimumAcceptable       Decimal?           @db.Decimal(18, 4)
+  stretchTarget           Decimal?           @db.Decimal(18, 4)
+  evidenceRequired        Boolean            @default(false)
+  employeeCommentRequired Boolean            @default(false)
+  reviewerCommentRequired Boolean            @default(false)
+  critical                Boolean            @default(false)
+  position                Int                @default(0)
+
+  @@index([versionId])
+  @@index([companyId])
+}
+
+model PerformanceBand {
+  id         String  @id @default(uuid())
+  companyId  String
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  templateId String? // optional: template-specific bands override company bands
+  minScore   Decimal @db.Decimal(5, 2)
+  maxScore   Decimal @db.Decimal(5, 2)
+  label      String
+  color      String?
+  position   Int     @default(0)
+
+  @@index([companyId])
+}
+
+model EmployeePerformanceAssessment {
+  id                        String                   @id @default(uuid())
+  companyId                 String
+  company                   Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  cycleId                   String
+  cycle                     PerformanceCycle         @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  employeeId                String
+  employee                  Employee                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  departmentId              String?
+  department                Department?              @relation(fields: [departmentId], references: [id])
+  managerId                 String?
+  versionId                 String
+  version                   KpiTemplateVersion       @relation(fields: [versionId], references: [id])
+  templateName              String // snapshot of template name for reporting
+  status                    String                   @default("PENDING_EMPLOYEE") // PENDING_EMPLOYEE | PENDING_MANAGER | PENDING_QA | PENDING_CALIBRATION | PENDING_APPROVAL | APPROVED | COMPLETED | LOCKED
+  employeeSubmittedAt       DateTime?
+  managerSubmittedAt        DateTime?
+  qaSubmittedAt             DateTime?
+  approvedAt                DateTime?
+  lockedAt                  DateTime?
+  totalScore                Decimal?                 @db.Decimal(6, 2) // 0-100+ weighted percentage points
+  result                    String? // PASS | FAIL
+  band                      String? // performance band label
+  criticalNotMet            Boolean                  @default(false)
+  employeeSubmissionOverdue Boolean                  @default(false)
+  managerReviewOverdue      Boolean                  @default(false)
+  qaReviewOverdue           Boolean                  @default(false)
+  acknowledgedAt            DateTime?
+  acknowledgementStatus     String                   @default("NOT_SENT") // NOT_SENT | PENDING | ACKNOWLEDGED
+  acknowledgementComment    String?
+  employmentEndedDuring     Boolean                  @default(false)
+  excludedReason            String?
+  prorationFactor           Decimal?                 @db.Decimal(6, 4) // e.g. 0.5 for half-period eligibility
+  kpis                      EmployeePerformanceKpi[]
+  qaReviews                 PerformanceQaReview[]
+  incentive                 PerformanceIncentive?
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+
+  @@unique([cycleId, employeeId])
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([versionId])
+}
+
+model EmployeePerformanceKpi {
+  id                      String                        @id @default(uuid())
+  companyId               String
+  company                 Company                       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assessmentId            String
+  assessment              EmployeePerformanceAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  kpiDefinitionId         String? // null after template archived; snapshot fields hold the data
+  code                    String
+  name                    String
+  description             String
+  categoryLabel           String?
+  weight                  Decimal                       @db.Decimal(5, 2)
+  measurementType         String
+  direction               String
+  scoringMethod           String
+  targetType              String
+  targetValue             Decimal?                      @db.Decimal(18, 4)
+  targetText              String?
+  unit                    String?
+  dataSource              String?
+  dataSourceLabel         String?
+  critical                Boolean                       @default(false)
+  position                Int                           @default(0)
+  // values
+  actualValue             Decimal?                      @db.Decimal(18, 4)
+  actualText              String?
+  managerActual           Decimal?                      @db.Decimal(18, 4)
+  qaActual                Decimal?                      @db.Decimal(18, 4)
+  employeeScore           Decimal?                      @db.Decimal(6, 2)
+  achievement             Decimal?                      @db.Decimal(6, 2) // percent 0-100+ (capped)
+  capped                  Boolean                       @default(false)
+  weightedScore           Decimal?                      @db.Decimal(8, 4) // achievement% x weight / 100 = points
+  systemDerived           Boolean                       @default(false)
+  employeeComment         String?
+  employeeEvidence        String?
+  employeeSubmittedAt     DateTime?
+  employeeCommentRequired Boolean                       @default(false)
+  evidenceRequired        Boolean                       @default(false)
+  managerScore            Decimal?                      @db.Decimal(6, 2) // percent achievement entered/adjusted by manager
+  managerComment          String?
+  managerEvidence         String?
+  managerSubmittedAt      DateTime?
+  qaScore                 Decimal?                      @db.Decimal(6, 2)
+  qaComment               String?
+  qaEvidence              String?
+  qaSubmittedAt           DateTime?
+  effectiveScore          Decimal?                      @db.Decimal(6, 2) // qa ?? manager ?? employee-derived
+  auditNotes              String?
+
+  @@index([assessmentId])
+  @@index([companyId])
+}
+
+model PerformanceQaReview {
+  id           String                        @id @default(uuid())
+  companyId    String
+  company      Company                       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assessmentId String
+  assessment   EmployeePerformanceAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  reviewerId   String
+  status       String                        @default("IN_PROGRESS") // IN_PROGRESS | SUBMITTED
+  comment      String?
+  adjustments  Json? // [{kpiId, from, to, reason}]
+  submittedAt  DateTime?
+  createdAt    DateTime                      @default(now())
+
+  @@index([assessmentId])
+  @@index([companyId])
+}
+
+model PerformanceNotification {
+  id         String    @id @default(uuid())
+  companyId  String
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId     String?
+  employeeId String?
+  type       String
+  title      String
+  body       String?
+  link       String?
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([companyId, userId])
+}
+
+model PerformanceIncentive {
+  id              String                        @id @default(uuid())
+  companyId       String
+  company         Company                       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reference       String                        @unique
+  assessmentId    String                        @unique
+  assessment      EmployeePerformanceAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        Employee                      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  planId          String?
+  plan            IncentivePlan?                @relation(fields: [planId], references: [id])
+  planName        String
+  finalScore      Decimal                       @db.Decimal(6, 2)
+  band            String?
+  calculationType String                        @default("PERCENT_SALARY") // FIXED | PERCENT_SALARY | PERCENT_COMMISSION | CUSTOM
+  percentValue    Decimal?                      @db.Decimal(6, 4)
+  amount          Decimal                       @db.Decimal(18, 2)
+  currency        String                        @default("USD")
+  status          String                        @default("PENDING_APPROVAL") // PENDING_APPROVAL | APPROVED | REJECTED | SENT_TO_PAYROLL | PAID
+  approvedById    String?
+  approvedAt      DateTime?
+  payrollInputRef String? // reference recorded in payslip data
+  paidAt          DateTime?
+  rejectionReason String?
+  createdAt       DateTime                      @default(now())
+
+  @@index([companyId])
+  @@index([employeeId])
+}
+
+model DevelopmentPlan {
+  id           String    @id @default(uuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId   String
+  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  assessmentId String?
+  objective    String
+  action       String?
+  owner        String?
+  targetDate   DateTime?
+  training     String?
+  progress     String    @default("NOT_STARTED") // NOT_STARTED | IN_PROGRESS | COMPLETED
+  notes        String?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([employeeId])
 }
 
 model StatutoryRule {
@@ -1379,15 +1769,27 @@ model FiscalIntegrationLog {
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  companyId  String?
-  company    Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  userId     String?
-  action     String
-  entityType String
-  entityId   String?
-  metadata   Json?
-  createdAt  DateTime @default(now())
+  id            String   @id @default(uuid())
+  companyId     String?
+  company       Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  branchId      String?
+  branch        Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  action        String
+  entityType    String
+  entityId      String?
+  module        String?
+  result        String?
+  reason        String?
+  correlationId String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([module])
 }
 
 model IntegrationConnection {
@@ -1868,6 +2270,8 @@ model Payslip {
   employerNssa    Decimal    @default(0) @db.Decimal(18, 2)
   allowances      Json?
   deductions      Json?
+  bonusAmount     Decimal    @default(0) @db.Decimal(18, 2)
+  bonusReferences Json? // [{reference, amount, assessmentId, score, plan}]
   status          String     @default("GENERATED")
   publishedAt     DateTime?
 
@@ -3309,18 +3713,38 @@ model Timesheet {
 }
 
 model ReportDefinition {
+  id           String   @id @default(uuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  dataset      String
+  columns      Json?
+  filters      Json?
+  groupBy      String?
+  ownerId      String?
+  category     String?
+  visibility   String   @default("PRIVATE")
+  sharedRoleId String?
+  sortBy       String?
+  sortDir      String?
+  saved        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([companyId])
+}
+
+model ReportUserState {
   id        String   @id @default(uuid())
   companyId String
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name      String
-  dataset   String
-  columns   Json?
-  filters   Json?
-  groupBy   String?
-  saved     Boolean  @default(true)
-  createdAt DateTime @default(now())
+  userId    String
+  key       String // favorites | recents
+  value     Json
+  updatedAt DateTime @updatedAt
 
-  @@index([companyId])
+  @@unique([companyId, userId, key])
+  @@index([companyId, userId])
 }
 
 model DebitNote {
@@ -3567,4 +3991,108 @@ model PaymentAllocation {
 
   @@index([receiptId])
   @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// Integration Control Centre â€” additive models (no existing tables modified).
+// All records are company-scoped for multi-tenant isolation.
+// ---------------------------------------------------------------------------
+
+// Health history for every adapter health check.
+model IntegrationHealthLog {
+  id              String   @id @default(uuid())
+  companyId       String
+  integrationType String // PAYMENT | STORAGE | EMAIL | SMS | QUEUE | ZIMRA | BANK | WEBHOOK
+  provider        String
+  environment     String   @default("MOCK") // MOCK | TEST | LIVE
+  status          String // MOCK | NOT_CONFIGURED | CONFIGURED | CONNECTED | DEGRADED | ERROR | DISABLED
+  latencyMs       Int      @default(0)
+  message         String?
+  details         Json?
+  checkedAt       DateTime @default(now())
+
+  @@index([companyId, integrationType, checkedAt])
+}
+
+// Structured activity feed (payment created, email sent, object uploaded, ...).
+model IntegrationActivityLog {
+  id              String   @id @default(uuid())
+  companyId       String
+  integrationType String
+  action          String
+  source          String? // API | WEBHOOK | SCHEDULER | MANUAL
+  status          String?
+  durationMs      Int?
+  reference       String?
+  correlationId   String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  @@index([companyId, integrationType, createdAt])
+}
+
+// Webhook events with provider-event idempotency (unique per company+provider+event).
+model WebhookEvent {
+  id               String    @id @default(uuid())
+  companyId        String
+  provider         String
+  eventId          String
+  eventType        String?
+  status           String    @default("RECEIVED") // RECEIVED | PROCESSING | PROCESSED | FAILED | IGNORED
+  attempts         Int       @default(0)
+  signatureValid   Boolean?
+  rejectionReason  String?
+  payload          Json? // sanitized, permission-controlled
+  linkedEntityType String?
+  linkedEntityId   String?
+  receivedAt       DateTime  @default(now())
+  processedAt      DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@unique([companyId, provider, eventId])
+  @@index([companyId, status, receivedAt])
+}
+
+// Outbound messaging log (email / SMS) â€” DELIVERED only when the provider confirms.
+model MessageLog {
+  id                String   @id @default(uuid())
+  companyId         String
+  channel           String // EMAIL | SMS
+  recipient         String
+  template          String?
+  source            String? // invoice | reminder | payslip | alert | ...
+  subject           String?
+  status            String   @default("QUEUED") // QUEUED | SENT | DELIVERED | FAILED
+  provider          String
+  providerMessageId String?
+  correlationId     String?
+  errorCode         String?
+  errorMessage      String?
+  sentById          String?
+  createdAt         DateTime @default(now())
+
+  @@index([companyId, channel, createdAt])
+}
+
+// Background job queue â€” persists jobs so failed jobs can be retried.
+model QueueJob {
+  id            String    @id @default(uuid())
+  companyId     String
+  type          String // EMAIL | FISCAL_RETRY | REPORT | EXPORT | NOTIFICATION | ...
+  payload       Json?
+  status        String    @default("WAITING") // WAITING | ACTIVE | COMPLETED | FAILED | DELAYED
+  attempts      Int       @default(0)
+  maxAttempts   Int       @default(3)
+  backoffMs     Int       @default(1000)
+  errorCode     String?
+  errorMessage  String?
+  sourceModule  String?
+  correlationId String?
+  createdAt     DateTime  @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+  nextRetryAt   DateTime?
+
+  @@index([companyId, status, createdAt])
+  @@index([companyId, type])
 }

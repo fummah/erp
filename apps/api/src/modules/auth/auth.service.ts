@@ -21,6 +21,8 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { memberships: { include: { company: true, tenant: true } } } });
     if (!user) throw new UnauthorizedException('User not found');
     if (user.status !== 'ACTIVE') throw new ForbiddenException('Account disabled');
+    // Track last sign-in for the Administration module (login history).
+    await this.prisma.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } }).catch(() => undefined);
     const refresh = await this.persistRefresh(user.id);
     const base = { refresh_token: refresh.refresh_token, expires_at: refresh.expires_at };
     if (user.isPlatformAdmin) {

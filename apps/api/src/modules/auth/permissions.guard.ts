@@ -15,7 +15,10 @@ export class PermissionsGuard implements CanActivate {
     if (!required || !required.length) return true;
     const req = context.switchToHttp().getRequest();
     const user: RequestUser = req.user;
-    if (!user || !user.companyId) return false;
+    if (!user) return false;
+    // Platform administrators operate across the whole platform — they pass any permission check.
+    if (user.isPlatformAdmin) return true;
+    if (!user.companyId) return false;
     return this.permissionService.hasAny(user, required);
   }
 }

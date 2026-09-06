@@ -6,7 +6,7 @@ import type { ColumnsType } from 'antd/es/table';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
-  ArrowLeftOutlined, DollarOutlined, FileDoneOutlined, FileTextOutlined, PrinterOutlined,
+  ArrowLeftOutlined, DollarOutlined, FileDoneOutlined, FileTextOutlined, PrinterOutlined, SwapOutlined,
   UserOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { Table } from 'antd';
@@ -67,7 +67,7 @@ export default function CustomerDetails() {
   }
   function openEdit() {
     form.resetFields();
-    form.setFieldsValue({ name: customer?.name, firstName: customer?.firstName, lastName: customer?.lastName, companyName: customer?.companyName, email: customer?.email, phone: customer?.phone, mobile: customer?.mobile, address1: customer?.address1, address2: customer?.address2, city: customer?.city, state: customer?.state, zip: customer?.zip, country: customer?.country, notes: customer?.notes, tin: customer?.tin, vatNumber: customer?.vatNumber, creditLimit: Number(customer?.creditLimit || 0), taxStatus: customer?.taxStatus || 'Taxable', defaultTaxRate: Number(customer?.defaultTaxRate || 0), status: customer?.status || 'ACTIVE' });
+    form.setFieldsValue({ name: customer?.name, firstName: customer?.firstName, lastName: customer?.lastName, companyName: customer?.companyName, email: customer?.email, phone: customer?.phone, mobile: customer?.mobile, address1: customer?.address1, address2: customer?.address2, city: customer?.city, state: customer?.state, zip: customer?.zip, country: customer?.country, paymentTerms: customer?.paymentTerms, priceListId: customer?.priceListId, notes: customer?.notes, tin: customer?.tin, vatNumber: customer?.vatNumber, creditLimit: Number(customer?.creditLimit || 0), taxStatus: customer?.taxStatus || 'Taxable', defaultTaxRate: Number(customer?.defaultTaxRate || 0), status: customer?.status || 'ACTIVE' });
     setEditOpen(true);
   }
 
@@ -113,6 +113,7 @@ export default function CustomerDetails() {
         <div className="flex items-center gap-2">
           <Button icon={<UserOutlined />} onClick={openEdit}>Edit Customer</Button>
           <Button icon={<FileDoneOutlined />} disabled={customer?.status === 'INACTIVE'} onClick={() => setInvOpen(true)}>New Invoice</Button>
+          <Link href={`/sales/orders/new?customerId=${id}`}><Button icon={<SwapOutlined />} disabled={customer?.status === 'INACTIVE'}>New Order</Button></Link>
           <Button type="primary" icon={<FileTextOutlined />} disabled={customer?.status === 'INACTIVE'} onClick={() => setQuoteOpen(true)}>New Quote</Button>
         </div>
       </div>
@@ -168,7 +169,7 @@ export default function CustomerDetails() {
         <Form form={form} layout="vertical" className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
           <Form.Item label="First Name" name="firstName" className="!mb-3"><Input /></Form.Item>
           <Form.Item label="Last Name" name="lastName" className="!mb-3"><Input /></Form.Item>
-          <Form.Item label="Display Name" name="name" className="!mb-3" rules={[{ required: true, message: 'Name is required' }]}><Input /></Form.Item>
+          <Form.Item label="Display Name" name="name" className="!mb-3" extra="If left blank and saved, NexusERP will regenerate it from the company or customer name."><Input placeholder="Leave blank to auto-generate" /></Form.Item>
           <Form.Item label="Company" name="companyName" className="!mb-3"><Input /></Form.Item>
           <Form.Item label="Email" name="email" className="!mb-3"><Input /></Form.Item>
           <Form.Item label="Phone" name="phone" className="!mb-3"><Input /></Form.Item>
@@ -179,6 +180,8 @@ export default function CustomerDetails() {
           <Form.Item label="State" name="state" className="!mb-3"><Input /></Form.Item>
           <Form.Item label="ZIP" name="zip" className="!mb-3"><Input /></Form.Item>
           <Form.Item label="Country" name="country" className="!mb-3"><Select showSearch placeholder="Select country" options={COUNTRIES.map((c: any) => ({ label: c, value: c }))} /></Form.Item>
+          <Form.Item label="Payment Terms" name="paymentTerms" className="!mb-3"><Select allowClear placeholder="e.g. Net 30" options={['Net 15', 'Net 30', 'Net 60', 'Due on Receipt'].map((t: any) => ({ label: t, value: t }))} /></Form.Item>
+          <Form.Item label="Price List" name="priceListId" className="!mb-3"><Select allowClear showSearch optionFilterProp="label" placeholder="Customer price list" options={(meta.data?.priceLists || []).map((p: any) => ({ label: `${p.name} (${p.currency})`, value: p.id }))} /></Form.Item>
           <Form.Item label="Tax ID (TIN)" name="tin" className="!mb-3"><Input /></Form.Item>
           <Form.Item label="VAT Number" name="vatNumber" className="!mb-3"><Input /></Form.Item>
           <Form.Item label="Credit Limit" name="creditLimit" className="!mb-3"><InputNumber className="w-full" prefix="$" min={0} /></Form.Item>

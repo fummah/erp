@@ -37,7 +37,14 @@ async function main() {
   const item = await prisma.inventoryItem.upsert({ where:{companyId_sku:{companyId:company.id,sku:'SKU-001'}}, update:{}, create:{companyId:company.id,sku:'SKU-001',name:'Demo Product',unit:'EA',hsCode:'00000000',reorderLevel:5} });
   let wh = await prisma.warehouse.findFirst({where:{companyId:company.id,code:'MAIN'}});
   if(!wh) wh=await prisma.warehouse.create({data:{companyId:company.id,branchId:branch.id,code:'MAIN',name:'Main Warehouse'}});
-  await prisma.employee.upsert({ where:{companyId_employeeNo:{companyId:company.id,employeeNo:'EMP001'}}, update:{}, create:{companyId:company.id,departmentId:dept.id,employeeNo:'EMP001',firstName:'Tariro',lastName:'Moyo',hireDate:new Date('2026-01-15'),basicSalary:800} });
+  await prisma.employee.upsert({ where:{companyId_employeeNo:{companyId:company.id,employeeNo:'EMP001'}}, update:{}, create:{companyId:company.id,departmentId:dept.id,employeeNo:'EMP001',firstName:'Tariro',lastName:'Moyo',hireDate:new Date('2026-01-15'),basicSalary:800,workEmail:'tariro.moyo@demo.local'} });
+  // Backfill work emails for demo employees created by older seeds (the
+  // employee-first user flow requires a work email).
+  const emailless = await prisma.employee.findMany({ where: { companyId: company.id, workEmail: null }, select: { id: true, firstName: true, lastName: true }, take: 200 });
+  for (const e of emailless) {
+    const w = `${(e.firstName || 'employee').toLowerCase().replace(/[^a-z0-9]/g, '.')}.${(e.lastName || 'demo').toLowerCase().replace(/[^a-z0-9]/g, '.')}@demo.local`;
+    await prisma.employee.update({ where: { id: e.id }, data: { workEmail: w } });
+  }
   if(await prisma.lead.count({where:{companyId:company.id}})===0) await prisma.lead.create({data:{companyId:company.id,name:'Kudzai N.',companyName:'Karoi Trading',status:'QUALIFIED',estimatedValue:25000}});
   await prisma.asset.upsert({where:{companyId_assetNo:{companyId:company.id,assetNo:'AST001'}},update:{},create:{companyId:company.id,assetNo:'AST001',name:'Delivery Vehicle',category:'Vehicles',location:'Harare',cost:18000}});
   await prisma.risk.upsert({where:{companyId_code:{companyId:company.id,code:'RSK001'}},update:{},create:{companyId:company.id,code:'RSK001',title:'FDMS connectivity outage',category:'Operational',likelihood:2,impact:4,owner:'Finance Manager',mitigation:'Queue and retry fiscal transactions.'}});

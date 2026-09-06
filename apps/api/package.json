@@ -8,7 +8,8 @@
     "start": "node dist/main.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test:performance": "tsx scripts/performance-tests.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

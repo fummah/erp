@@ -8,7 +8,7 @@ import {
   CarOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, PercentageOutlined, PrinterOutlined, ProfileOutlined, RightOutlined, SafetyCertificateOutlined,
   SearchOutlined, SettingOutlined, ShopOutlined, ShoppingCartOutlined, SolutionOutlined, SwapOutlined, TeamOutlined, ToolOutlined,
-  UndoOutlined, UserOutlined, WalletOutlined, ApiOutlined, CheckOutlined, MailOutlined,
+  UndoOutlined, UserOutlined, WalletOutlined, ApiOutlined, CheckOutlined, MailOutlined, AimOutlined,
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-store';
@@ -88,6 +88,7 @@ const nav = [
         { key: '/hr/onboarding', label: 'Onboarding' },
         { key: '/hr/leave-benefits', label: 'Leave & Benefits' },
       ] },
+      { key: '/performance', label: 'Performance', icon: <AimOutlined />, color: '#7c3aed' },
       { key: '/assets', label: 'Assets', icon: <ToolOutlined /> },
       { key: '/compliance', label: 'Compliance & Risk', icon: <SafetyCertificateOutlined /> },
     ],
@@ -154,6 +155,7 @@ const PAGE_TITLES: Record<string, [string, string]> = {
   '/finance/currency': ['Currency & Exchange', 'Currencies and exchange rates'],
   '/finance/vat-report': ['VAT Report', 'Output and input VAT summary'],
   '/hr': ['HR & Payroll', 'Employees, leave, attendance and payroll'],
+  '/performance': ['Performance', 'KPI templates, assessment cycles, QA reviews and incentives'],
   '/hr/payroll-rules': ['Payroll Rules', 'Effective-dated PAYE & NSSA configuration'],
   '/hr/recruitment': ['Recruitment', 'Vacancies, candidates and the hiring pipeline'],
   '/hr/onboarding': ['Onboarding', 'Templates and task checklists for new employees'],

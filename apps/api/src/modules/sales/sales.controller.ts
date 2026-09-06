@@ -11,10 +11,29 @@ import { NumberingService } from '../../core/common/numbering.service';
 import { AuditService } from '../../core/common/audit.service';
 import { DocumentTrailService } from '../document-trail/document-trail.service';
 import { CustomerPaymentsService } from './customer-payments.service';
+import { PricingService } from './pricing.service';
 
 @ApiTags('Sales') @ApiBearerAuth() @UseGuards(JwtAuthGuard) @Controller('sales')
 export class SalesController {
-  constructor(private prisma: PrismaService, private posting: PostingService, private numbering: NumberingService, private audit: AuditService, private trail: DocumentTrailService, private payments: CustomerPaymentsService, private invoiceStatus: InvoiceStatusService) {}
+  constructor(private prisma: PrismaService, private posting: PostingService, private numbering: NumberingService, private audit: AuditService, private trail: DocumentTrailService, private payments: CustomerPaymentsService, private invoiceStatus: InvoiceStatusService, private pricing: PricingService) {}
+
+  /**
+   * Authoritative Display Name resolution (spec: blank display name auto-generates):
+   * explicit value → companyName → firstName+lastName → firstName → lastName → customer code.
+   */
+  private resolveDisplayName(input: { name?: string; companyName?: string; firstName?: string; lastName?: string }, fallbackCode: string, existing?: { firstName?: string | null; lastName?: string | null; companyName?: string | null }): string {
+    const explicit = String(input.name ?? '').trim();
+    if (explicit) return explicit;
+    const company = String(input.companyName ?? existing?.companyName ?? '').trim();
+    if (company) return company;
+    const first = String(input.firstName ?? existing?.firstName ?? '').trim();
+    const last = String(input.lastName ?? existing?.lastName ?? '').trim();
+    const person = [first, last].filter(Boolean).join(' ').trim();
+    if (person) return person;
+    if (first) return first;
+    if (last) return last;
+    return fallbackCode;
+  }
 
   private computeLines(lines: any[]) {
     let subtotal = 0, taxTotal = 0;
@@ -22,10 +41,24 @@ export class SalesController {
       const net = Number(l.quantity) * Number(l.unitPrice);
       const taxRate = Number(l.taxRate || 0);
       const tax = net * (taxRate / 100);
+      const { priceSource, ...rest } = l; // priceSource is diagnostic metadata, not persisted on lines
       subtotal += net; taxTotal += tax;
-      return { ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate, taxAmount: Number(tax.toFixed(2)), lineTotal: Number((net + tax).toFixed(2)) };
+      return { ...rest, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate, taxAmount: Number(tax.toFixed(2)), lineTotal: Number((net + tax).toFixed(2)) };
     });
     return { mapped, subtotal: Number(subtotal.toFixed(2)), taxTotal: Number(taxTotal.toFixed(2)), total: Number((subtotal + taxTotal).toFixed(2)) };
+  }
+
+  /** Terms engine: Net 30 + 2026-09-06 → 2026-10-06. */
+  private dueDateFromTerms(terms?: string | null, invoiceDate?: string | null): Date | undefined {
+    if (!invoiceDate) return undefined;
+    const d = new Date(invoiceDate);
+    if (Number.isNaN(d.getTime())) return undefined;
+    const t = String(terms || '').toLowerCase();
+    if (t.includes('net 15')) { d.setDate(d.getDate() + 15); return d; }
+    if (t.includes('net 30')) { d.setDate(d.getDate() + 30); return d; }
+    if (t.includes('net 60')) { d.setDate(d.getDate() + 60); return d; }
+    if (t.includes('net 90')) { d.setDate(d.getDate() + 90); return d; }
+    return undefined; // Due on Receipt / unknown terms: leave unset
   }
 
   // Deactivated customers cannot be used to create anything new.
@@ -44,10 +77,24 @@ export class SalesController {
   // ----- Customers -----
   @Get('customers') customers(@Req() req: any) { return this.prisma.customer.findMany({ where: { companyId: companyIdOf(req.user) }, orderBy: { name: 'asc' } }); }
 
+  /** Shared customer → document hydration defaults (quote/order/invoice use the same path). */
+  @Get('customers/:id/document-defaults') async documentDefaults(@Req() req: any, @Param('id') id: string) {
+    const d = await this.pricing.documentDefaults(companyIdOf(req.user), id);
+    if (!d) throw new BadRequestException('Customer not found');
+    return d;
+  }
+
+  /** Authoritative sales price resolution (price list → default selling price). */
+  @Get('pricing/resolve') async resolvePrice(@Req() req: any, @Query() q: { itemId?: string; customerId?: string; currency?: string; quantity?: string }) {
+    if (!q.itemId) throw new BadRequestException('itemId is required');
+    return this.pricing.resolve(companyIdOf(req.user), { itemId: q.itemId, customerId: q.customerId, currency: q.currency, quantity: q.quantity ? Number(q.quantity) : null });
+  }
+
   @Post('customers') async createCustomer(@Req() req: any, @Body() dto: CustomerDto) {
     const companyId = companyIdOf(req.user);
     const code = dto.code || await this.numbering.next(companyId, 'CUS');
-    const customer = await this.prisma.customer.create({ data: { companyId, code, name: dto.name, firstName: dto.firstName, lastName: dto.lastName, companyName: dto.companyName, email: dto.email, phone: normPhone(dto.phone), mobile: normPhone(dto.mobile), address1: dto.address1, address2: dto.address2, city: dto.city, state: dto.state, zip: dto.zip, country: dto.country, notes: dto.notes, taxStatus: dto.taxStatus, defaultTaxRate: dto.defaultTaxRate ?? 0, tin: dto.tin, vatNumber: dto.vatNumber, creditLimit: dto.creditLimit ?? 0, status: dto.status || 'ACTIVE' } });
+    const name = this.resolveDisplayName(dto, code);
+    const customer = await this.prisma.customer.create({ data: { companyId, code, name, firstName: dto.firstName, lastName: dto.lastName, companyName: dto.companyName, email: dto.email, phone: normPhone(dto.phone), mobile: normPhone(dto.mobile), address1: dto.address1, address2: dto.address2, city: dto.city, state: dto.state, zip: dto.zip, country: dto.country, paymentTerms: dto.paymentTerms || null, notes: dto.notes, taxStatus: dto.taxStatus, defaultTaxRate: dto.defaultTaxRate ?? 0, tin: dto.tin, vatNumber: dto.vatNumber, creditLimit: dto.creditLimit ?? 0, priceListId: dto.priceListId || null, status: dto.status || 'ACTIVE' } });
     await this.audit.log(companyId, req.user.sub, 'CREATE', 'Customer', customer.id, { code });
     await this.trail.create(companyId, { documentType: 'CUSTOMER', documentId: customer.id, eventType: 'CREATED', title: 'Customer Created', description: `Customer ${customer.name} created.`, userId: req.user.sub }).catch(() => {});
     return customer;
@@ -57,6 +104,12 @@ export class SalesController {
     const before = await this.prisma.customer.findFirst({ where: { id, companyId } });
     if (!before) throw new BadRequestException('Customer not found');
     const data = { ...dto } as any;
+    // Display Name cleared → regenerate from company/person fields (never store an empty string).
+    if (data.name !== undefined) {
+      const cleared = !String(data.name ?? '').trim();
+      if (cleared) data.name = this.resolveDisplayName({ ...dto, name: undefined }, before.code, before);
+      else data.name = String(data.name).trim();
+    }
     if (data.phone) data.phone = normPhone(data.phone);
     if (data.mobile) data.mobile = normPhone(data.mobile);
     const res = await this.prisma.customer.updateMany({ where: { id, companyId }, data });
@@ -92,6 +145,8 @@ export class SalesController {
   @Post('quotations') async createQuotation(@Req() req: any, @Body() dto: CreateQuotationDto) {
     const companyId = companyIdOf(req.user);
     await this.ensureCustomerActive(companyId, dto.customerId);
+    // Server-side pricing: fill product lines submitted without a rate (manual rates preserved).
+    const { unresolved } = await this.pricing.resolveLinePrices(companyId, { customerId: dto.customerId, currency: 'USD', lines: dto.lines as any[] });
     const { mapped, subtotal, taxTotal, total } = this.computeLines(dto.lines);
     const quotationNo = await this.numbering.next(companyId, 'QT');
     const quotation = await this.prisma.quotation.create({ data: { companyId, branchId: dto.branchId, customerId: dto.customerId, projectId: dto.projectId, quotationNo, address: dto.address, notes: dto.notes, statementMemo: dto.statementMemo, validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined, subtotal, taxTotal, total, lines: { create: mapped } }, include: { lines: true } });
@@ -225,6 +280,8 @@ export class SalesController {
   @Post('sales-orders') async createOrder(@Req() req: any, @Body() dto: any) {
     const companyId = companyIdOf(req.user);
     await this.ensureCustomerActive(companyId, dto.customerId);
+    // Server-side pricing for unpriced product lines; explicit rates kept as manual overrides.
+    await this.pricing.resolveLinePrices(companyId, { customerId: dto.customerId, currency: dto.currency || 'USD', lines: dto.lines as any[] });
     const { mapped, subtotal, taxTotal, total } = this.computeLines(dto.lines);
     const lineDiscount = (dto.lines || []).reduce((s: number, l: any) => s + Number(l.discount || 0), 0);
     const discount = Number(dto.discount || lineDiscount || 0);
@@ -402,10 +459,12 @@ export class SalesController {
   @Post('invoices') async create(@Req() req: any, @Body() dto: CreateInvoiceDto) {
     const companyId = companyIdOf(req.user);
     await this.ensureCustomerActive(companyId, dto.customerId);
+    // Server-side pricing for unpriced product lines; explicit rates kept as manual overrides.
+    await this.pricing.resolveLinePrices(companyId, { customerId: dto.customerId, currency: dto.currency || 'USD', lines: dto.lines as any[] });
     const { mapped, subtotal, taxTotal, total } = this.computeLines(dto.lines);
     const invoiceNo = dto.invoiceNo || await this.numbering.next(companyId, 'INV');
     const invoice = await this.prisma.salesInvoice.create({
-      data: { companyId, branchId: dto.branchId, customerId: dto.customerId, projectId: dto.projectId, invoiceNo, currency: dto.currency || 'USD', invoiceDate: dto.invoiceDate ? new Date(dto.invoiceDate) : undefined, terms: dto.terms, billingAddress: dto.billingAddress, notes: dto.notes, statementMemo: dto.statementMemo, email: dto.email, customerReference: dto.customerReference, poReference: dto.poReference, salesperson: dto.salesperson, dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined, subtotal, taxTotal, total, fiscalRequired: dto.fiscalRequired ?? true, fiscalStatus: (dto.fiscalRequired ?? true) ? 'READY' : 'NOT_REQUIRED', lines: { create: mapped } },
+      data: { companyId, branchId: dto.branchId, customerId: dto.customerId, projectId: dto.projectId, invoiceNo, currency: dto.currency || 'USD', invoiceDate: dto.invoiceDate ? new Date(dto.invoiceDate) : undefined, terms: dto.terms, billingAddress: dto.billingAddress, notes: dto.notes, statementMemo: dto.statementMemo, email: dto.email, customerReference: dto.customerReference, poReference: dto.poReference, salesperson: dto.salesperson, dueDate: dto.dueDate ? new Date(dto.dueDate) : this.dueDateFromTerms(dto.terms, dto.invoiceDate), subtotal, taxTotal, total, fiscalRequired: dto.fiscalRequired ?? true, fiscalStatus: (dto.fiscalRequired ?? true) ? 'READY' : 'NOT_REQUIRED', lines: { create: mapped } },
       include: { lines: true },
     });
     await this.audit.log(companyId, req.user.sub, 'CREATE', 'SalesInvoice', invoice.id, { invoiceNo });
@@ -447,6 +506,8 @@ export class SalesController {
     const existing = await this.prisma.salesInvoice.findFirst({ where: { id, companyId } });
     if (!existing) throw new Error('Invoice not found');
     await this.ensureCustomerActive(companyId, dto.customerId);
+    // Server-side pricing for newly added unpriced product lines (converted/saved lines keep their rates).
+    await this.pricing.resolveLinePrices(companyId, { customerId: dto.customerId, currency: dto.currency || existing.currency, lines: dto.lines as any[] });
     const { mapped, subtotal, taxTotal, total } = this.computeLines(dto.lines);
     await this.prisma.$transaction([
       this.prisma.salesInvoiceLine.deleteMany({ where: { invoiceId: id } }),
