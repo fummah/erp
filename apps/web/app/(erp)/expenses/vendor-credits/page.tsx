@@ -112,9 +112,9 @@ function NewCreditDrawer({ open, onClose, onSaved }: any) {
   const [supplierId, setSupplierId] = useState(''); const [creditNo, setCreditNo] = useState(''); const [date, setDate] = useState<any>(dayjs()); const [currency, setCurrency] = useState('USD'); const [reason, setReason] = useState(''); const [sourceInvoiceId, setSourceInvoiceId] = useState(''); const [reference, setReference] = useState(''); const [memo, setMemo] = useState(''); const [attachment, setAttachment] = useState<any>(null); const [lines, setLines] = useState<any[]>([{ key: 1, accountId: '', description: '', quantity: 1, unitPrice: 0, taxRate: 0 }]); const [saving, setSaving] = useState(false);
   const subtotal = lines.reduce((s: number, l: any) => s + Number(l.quantity || 0) * Number(l.unitPrice || 0), 0);
   const tax = lines.reduce((s: number, l: any) => s + (Number(l.quantity || 0) * Number(l.unitPrice || 0) * Number(l.taxRate || 0) / 100), 0);
-  function addLine() { setLines((p) => [...p, { key: p.length + 1, accountId: '', description: '', quantity: 1, unitPrice: 0, taxRate: 0 }]); }
-  function updLine(k: number, p: any) { setLines((p) => p.map((l) => (l.key === k ? { ...l, ...p } : l))); }
-  function remLine(k: number) { setLines((p) => p.filter((l) => l.key !== k)); }
+  function addLine() { setLines((prev) => [...prev, { key: Math.max(0, ...prev.map((x) => x.key)) + 1, accountId: '', description: '', quantity: 1, unitPrice: 0, taxRate: 0 }]); }
+  function updLine(k: number, patch: any) { setLines((prev) => prev.map((l) => (l.key === k ? { ...l, ...patch } : l))); }
+  function remLine(k: number) { setLines((prev) => prev.filter((l) => l.key !== k)); }
   async function save(post: boolean) {
     if (!supplierId) { message.error('Supplier is required'); return; }
     if (!lines.some((l) => Number(l.unitPrice || 0) > 0)) { message.error('Add credit line amounts'); return; }

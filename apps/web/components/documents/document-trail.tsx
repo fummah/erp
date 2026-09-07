@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Input, Modal, Select, Skeleton, Spin, Tag, message } from 'antd';
 import {
@@ -44,7 +44,17 @@ export function DocumentTrail({ type, id }: { type: 'invoice' | 'quotation' | 's
   const [cursor, setCursor] = useState<string | null>(null);
   const [events, setEvents] = useState<any[]>([]);
   const q = useQuery({ queryKey: ['/documents/trail', type, id], queryFn: () => api(`/documents/${type}/${id}/trail`), enabled: !!id });
-  if (q.data && events.length === 0 && q.isSuccess) setEvents(q.data.events || []);
+  const hasLoadedRef = useRef(false);
+  // Copy the fetched events into local state once per load — strictly inside an
+  // effect (setState during render caused React error #301 / infinite re-render
+  // when the trail contained zero events, which broke receipt viewing).
+  useEffect(() => {
+    if (q.isSuccess && !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      setEvents(q.data?.events || []);
+    }
+  }, [q.isSuccess, q.data]);
+  useEffect(() => { hasLoadedRef.current = false; }, [type, id]);
 
   const addNote = useMutation({
     mutationFn: (text: string) => api(`/documents/${type}/${id}/notes`, { method: 'POST', body: JSON.stringify({ note: text }) }),

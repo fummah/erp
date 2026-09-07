@@ -177,7 +177,7 @@ function AddChargeDrawer({ open, cardId, onClose, onSaved }: any) {
   const allocTotal = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
   const used = lines.filter((l) => Number(l.amount || 0) > 0);
   function addLine() { setLines((p) => [...p, { key: p.length + 1, accountId: '', description: '', amount: 0 }]); }
-  function updLine(k: number, p: any) { setLines((p) => p.map((l) => (l.key === k ? { ...l, ...p } : l))); }
+  function updLine(k: number, patch: any) { setLines((prev) => prev.map((l) => (l.key === k ? { ...l, ...patch } : l))); }
   function remLine(k: number) { setLines((p) => p.filter((l) => l.key !== k)); }
   async function submit() {
     if (!cid) { message.error('Select a credit card'); return; }

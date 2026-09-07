@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { Button, Drawer, Input, InputNumber, Modal, Popconfirm, Progress, Select, Space, Table, Tabs, Tag, Tooltip, message } from 'antd';
 import { CheckOutlined, SendOutlined, WarningOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -120,7 +121,7 @@ export function ReviewDrawer({ open, onClose, assessmentId, mode }: { open: bool
     <Drawer open={open} onClose={onClose} width="min(1060px, 97vw)" destroyOnClose
       title={d ? (
         <div>
-          <div className="text-[16px] font-bold text-[#171a2e]">{d.employee?.preferredName || `${d.employee?.firstName} ${d.employee?.lastName}`}</div>
+          <div className="text-[16px] font-bold text-[#171a2e]">{d.employee?.preferredName || `${d.employee?.firstName} ${d.employee?.lastName}`} <Link href={`/hr/employees/${d.employeeId}`} className="text-[12px] font-normal text-[#1d5fb5] hover:underline ml-1">View employee →</Link></div>
           <div className="text-[12px] text-[#64748b] font-normal">{d.employee?.position || '—'} · {d.employee?.department?.name || '—'} · {d.cycle?.name} · {d.templateName} v{d.version?.version}</div>
           <div className="flex flex-wrap gap-2 mt-1.5 font-normal">
             <Space size={4}><span className="text-[11px] text-[#64748b]">Employee:</span><SoftBadge tone={d.employeeSubmittedAt ? 'green' : 'amber'} dotless>{d.employeeSubmittedAt ? 'SUBMITTED' : 'NOT SUBMITTED'}</SoftBadge></Space>

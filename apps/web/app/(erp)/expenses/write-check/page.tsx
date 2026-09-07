@@ -37,7 +37,7 @@ export default function WriteCheckPage() {
   const used = lines.filter((l) => (Number(l.amount) || 0) > 0);
   const linesValid = !used.length || Math.abs(used.reduce((s, l) => s + Number(l.amount), 0) - Number(amount || 0)) < 0.01;
   function addLine() { setLines((p) => [...p, { key: p.length + 1, accountId: '', description: '', amount: 0 }]); }
-  function updLine(k: number, p: any) { setLines((p) => p.map((l) => (l.key === k ? { ...l, ...p } : l))); }
+  function updLine(k: number, patch: any) { setLines((prev) => prev.map((l) => (l.key === k ? { ...l, ...patch } : l))); }
   function remLine(k: number) { setLines((p) => p.filter((l) => l.key !== k)); }
   function reset() { setBankId(''); setCheckNo(''); setDate(dayjs()); setSupplierId(''); setPayeeOverride(''); setAmount(null); setAmountWords(''); setPayeeAddress(''); setMemo(''); setLines([{ key: 1, accountId: '', description: '', amount: 0 }]); }
   async function record(print: boolean) {

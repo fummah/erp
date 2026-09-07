@@ -2,9 +2,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Calendar, DatePicker, Drawer, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, message } from 'antd';
+import { Button, Calendar, DatePicker, Drawer, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, Tooltip, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { PlusOutlined, ReloadOutlined, TeamOutlined, FileDoneOutlined, WalletOutlined, CheckCircleOutlined, EyeOutlined, PrinterOutlined } from '@ant-design/icons';
+import { AimOutlined, BarChartOutlined, EditOutlined, PlusOutlined, ReloadOutlined, TeamOutlined, FileDoneOutlined, WalletOutlined, CheckCircleOutlined, EyeOutlined, PrinterOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import dayjs from 'dayjs';
 import { api } from '@/lib/api';
@@ -105,12 +105,22 @@ export default function Hr() {
     { title: 'Department', dataIndex: 'name' },
     { title: 'Branch', render: (_v, r) => r.branch?.name || '—' },
     { title: 'Employees', width: 100, align: 'right', render: (_v, r) => (employees.data || []).filter((e: any) => e.departmentId === r.id).length },
-    { title: 'Actions', width: 300, align: 'right', render: (_v, r) => (
-      <Space size={4}>
-        <Can permission="hr.employees.manage"><Button size="small" onClick={() => { setEditingDept(r); deptForm.setFieldsValue({ name: r.name, branchId: r.branchId, code: r.code }); setDeptOpen(true); }}>Edit</Button></Can>
-        <Button size="small" onClick={() => window.open(`/hr?tab=employees&departmentId=${r.id}`, '_self')}>View Employees</Button>
-        <Link href={`/performance?tab=templates&departmentId=${r.id}`}><Button size="small">KPI Templates</Button></Link>
-        <Link href={`/performance?tab=assessments&departmentId=${r.id}`}><Button size="small">Performance</Button></Link>
+    { title: 'Actions', width: 170, align: 'right', render: (_v, r) => (
+      <Space size={2}>
+        <Can permission="hr.employees.manage">
+          <Tooltip title="Edit department">
+            <Button size="small" type="text" icon={<EditOutlined />} onClick={() => { setEditingDept(r); deptForm.setFieldsValue({ name: r.name, branchId: r.branchId, code: r.code }); setDeptOpen(true); }} />
+          </Tooltip>
+        </Can>
+        <Tooltip title="View employees">
+          <Button size="small" type="text" icon={<TeamOutlined />} onClick={() => { setFDepart(r.id); setTab('employees'); }} />
+        </Tooltip>
+        <Tooltip title="KPI templates">
+          <Link href={`/performance?tab=templates&departmentId=${r.id}`}><Button size="small" type="text" icon={<AimOutlined />} /></Link>
+        </Tooltip>
+        <Tooltip title="Department performance">
+          <Link href={`/performance?tab=dashboard&departmentId=${r.id}`}><Button size="small" type="text" icon={<BarChartOutlined />} /></Link>
+        </Tooltip>
       </Space>
     ) },
   ];
@@ -339,7 +349,7 @@ export default function Hr() {
         </Form>
       </Modal>
 
-      <Modal open={deptOpen} title={editingDept ? `Edit department — ${editingDept.name}` : 'New department'} onCancel={() => { setDeptOpen(false); setEditingDept(null); }} onOk={submitDept} okText={editingDept ? 'Save' : 'Create'} destroyOnClose>
+      <Modal open={deptOpen} title={editingDept ? `Edit department — ${editingDept.name}` : 'New department'} onCancel={() => { setDeptOpen(false); setEditingDept(null); deptForm.resetFields(); }} onOk={submitDept} okText={editingDept ? 'Save' : 'Create'}>
         <Form form={deptForm} layout="vertical" className="mt-2">
           <Form.Item label="Branch" name="branchId" rules={[{ required: true }]}><Select allowClear placeholder="Select branch" disabled={!!editingDept} options={(meta.data?.branches || []).map((o: any) => ({ label: o.name, value: o.id }))} /></Form.Item>
           <Form.Item label="Code" name="code"><Input disabled={!!editingDept} /></Form.Item>

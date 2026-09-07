@@ -64,10 +64,10 @@ export function dueDateFromTerms(terms: string | null | undefined, invoiceDate: 
   return null;
 }
 
-/** Line defaults from the selected product (description / unit / qty seed). */
+/** Line defaults from the selected product (description snapshot: name only — no SKU). */
 export function productLineDefaults(item: any): { description: string; unit?: string; quantity: number } {
   return {
-    description: [item?.sku ? `${item.sku}` : null, item?.description || item?.name].filter(Boolean).join(' — ') || item?.name || '',
+    description: item?.name || item?.description || '',
     unit: item?.unit || undefined,
     quantity: 1,
   };

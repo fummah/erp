@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AutoComplete, Avatar, Badge, Button, ColorPicker, Dropdown, Input, Layout, Menu, Popover, Select, Space, Typography } from 'antd';
+import { AutoComplete, Avatar, Badge, Button, ColorPicker, Dropdown, Input, Layout, Menu, Popover, Select, Space, Tooltip, Typography } from 'antd';
 import {
   AccountBookOutlined, ApartmentOutlined, AppstoreOutlined, AuditOutlined, BankOutlined, BarChartOutlined, BulbOutlined,
   BarsOutlined, BellOutlined, BgColorsOutlined, BookOutlined, CalculatorOutlined, CalendarOutlined, CloudServerOutlined,
@@ -8,10 +8,11 @@ import {
   CarOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, PercentageOutlined, PrinterOutlined, ProfileOutlined, RightOutlined, SafetyCertificateOutlined,
   SearchOutlined, SettingOutlined, ShopOutlined, ShoppingCartOutlined, SolutionOutlined, SwapOutlined, TeamOutlined, ToolOutlined,
-  UndoOutlined, UserOutlined, WalletOutlined, ApiOutlined, CheckOutlined, MailOutlined, AimOutlined,
+  UndoOutlined, UserOutlined, WalletOutlined, ApiOutlined, CheckOutlined, MailOutlined,
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-store';
+import { NotificationPanel, useUnreadCount } from '@/components/notifications-panel';
 import { api } from '@/lib/api';
 
 const { Sider, Header, Content } = Layout;
@@ -83,12 +84,12 @@ const nav = [
       { key: '/projects', label: 'Projects', icon: <AppstoreOutlined /> },
       { key: '/hr', label: 'HR & Payroll', icon: <TeamOutlined />, color: '#f43f5e', children: [
         { key: '/hr', label: 'Dashboard' },
+        { key: '/performance', label: 'Performance & QA' },
         { key: '/hr/payroll-rules', label: 'Payroll Rules' },
         { key: '/hr/recruitment', label: 'Recruitment' },
         { key: '/hr/onboarding', label: 'Onboarding' },
         { key: '/hr/leave-benefits', label: 'Leave & Benefits' },
       ] },
-      { key: '/performance', label: 'Performance', icon: <AimOutlined />, color: '#7c3aed' },
       { key: '/assets', label: 'Assets', icon: <ToolOutlined /> },
       { key: '/compliance', label: 'Compliance & Risk', icon: <SafetyCertificateOutlined /> },
     ],
@@ -156,6 +157,7 @@ const PAGE_TITLES: Record<string, [string, string]> = {
   '/finance/vat-report': ['VAT Report', 'Output and input VAT summary'],
   '/hr': ['HR & Payroll', 'Employees, leave, attendance and payroll'],
   '/performance': ['Performance', 'KPI templates, assessment cycles, QA reviews and incentives'],
+  '/notifications': ['Notifications', 'Your alerts across all modules'],
   '/hr/payroll-rules': ['Payroll Rules', 'Effective-dated PAYE & NSSA configuration'],
   '/hr/recruitment': ['Recruitment', 'Vacancies, candidates and the hiring pipeline'],
   '/hr/onboarding': ['Onboarding', 'Templates and task checklists for new employees'],
@@ -264,6 +266,8 @@ export function ErpShell({ children }: { children: React.ReactNode }) {
   const [search, setSearch] = useState('');
   const [activeQuery, setActiveQuery] = useState('');
   const [quickOpen, setQuickOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const { count: unreadCount } = useUnreadCount();
   const [flyout, setFlyout] = useState<any | null>(null);
   const [flyoutClosing, setFlyoutClosing] = useState(false);
   const [flyoutPointerTop, setFlyoutPointerTop] = useState(28);
@@ -574,7 +578,25 @@ export function ErpShell({ children }: { children: React.ReactNode }) {
               />
             </AutoComplete>
 
-            <Button type="text" className="nex-notif-btn" aria-label="Notifications" icon={<Badge count={3} size="small" offset={[-2, 4]} style={{ background: '#003366', boxShadow: '0 0 0 2px #fff' }}><BellOutlined /></Badge>} />
+            <Popover
+              trigger="click"
+              placement="bottomRight"
+              open={notifOpen}
+              onOpenChange={setNotifOpen}
+              arrow={false}
+              overlayClassName="nex-notif-popover"
+              content={<NotificationPanel onNavigate={() => setNotifOpen(false)} />}
+            >
+              <Tooltip title="Notifications">
+                <Button
+                  type="text"
+                  className="nex-notif-btn"
+                  aria-label="Notifications"
+                  onClick={() => setNotifOpen((o) => !o)}
+                  icon={<Badge count={unreadCount || undefined} size="small" offset={[-2, 4]} style={{ background: '#003366', boxShadow: '0 0 0 2px #fff' }}><BellOutlined /></Badge>}
+                />
+              </Tooltip>
+            </Popover>
 
             <Popover content={quickAccessPanel} trigger="click" placement="bottomRight" open={quickOpen} onOpenChange={setQuickOpen}>
               <Button className="nex-quick-access-btn" icon={<AppstoreOutlined />}>

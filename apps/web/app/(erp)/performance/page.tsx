@@ -38,14 +38,15 @@ export default function PerformancePage() {
   const [tab, setTab] = useState(params.get('tab') || 'dashboard');
   const [tplDrawer, setTplDrawer] = useState(false);
   const [editingTpl, setEditingTpl] = useState<any>(null);
-  const [tplDetailsId, setTplDetailsId] = useState<string | null>(params.get('departmentId'));
+  // Deep-link support: /performance?tab=templates&departmentId=... filters the lists to that department.
+  const [tplDetailsId, setTplDetailsId] = useState<string | null>(null);
   const [cycleDrawer, setCycleDrawer] = useState(false);
   const [editingCycleId, setEditingCycleId] = useState<string | null>(null);
-  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [reviewId, setReviewId] = useState<string | null>(params.get('assessment'));
   const [reviewMode, setReviewMode] = useState<any>('VIEW');
   const [planDrawer, setPlanDrawer] = useState(false);
   const [editingPlan, setEditingPlan] = useState<any>(null);
-  const [fDept, setFDept] = useState('');
+  const [fDept, setFDept] = useState(params.get('departmentId') || '');
   const [fStatus, setFStatus] = useState('');
   const [fCycle, setFCycle] = useState('');
   const [fSearch, setFSearch] = useState('');

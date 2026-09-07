@@ -284,6 +284,7 @@ export function KpiTemplateDetailsDrawer({ open, onClose, template, onEdit }: { 
               <UsageCard label="Completed historical reviews" value={usage.data?.historicalReviews} />
             </div>
           ) },
+          { key: 'assessments', label: 'Assessments', children: <TemplateAssessments template={t} /> },
           { key: 'audit', label: 'Audit', children: <div className="text-[13px] text-[#64748b]">Audit entries for this template appear in Administration → Audit with entity type <code>KpiTemplate</code> (created, updated, version created, activated, duplicated).</div> },
         ]} />
       )}
@@ -292,7 +293,31 @@ export function KpiTemplateDetailsDrawer({ open, onClose, template, onEdit }: { 
 }
 
 import { Can } from '@/components/Can';
+import { SoftBadge } from '@/components/crud-page';
+import Link from 'next/link';
 function CanTplManage({ children }: { children: React.ReactNode }) { return <Can permission="performance.templates.manage">{children}</Can>; }
+
+/** Assessments using this template — drill into the employee and act on the KPIs. */
+function TemplateAssessments({ template }: { template: any }) {
+  const assessments = useQuery({ queryKey: ['/performance/assessments', 'template', template?.id], queryFn: () => api('/performance/assessments'), enabled: !!template?.id });
+  const rows = (assessments.data || []).filter((a: any) => a.templateName === template?.name);
+  const STATUS_TONE: Record<string, string> = { PENDING_EMPLOYEE: 'amber', PENDING_MANAGER: 'amber', PENDING_QA: 'amber', PENDING_CALIBRATION: 'amber', PENDING_APPROVAL: 'blue', APPROVED: 'green', COMPLETED: 'green', LOCKED: 'purple' };
+  return (
+    <div>
+      <div className="text-[12px] text-[#94a3b8] mb-2">Employees assessed with this template — open one to review, QA or approve the KPIs.</div>
+      <Table rowKey="id" size="small" loading={assessments.isLoading} dataSource={rows} pagination={{ pageSize: 10 }} columns={[
+        { title: 'Employee', render: (_v, r) => <Link href={`/hr/employees/${r.employeeId}`} className="text-[13px] text-[#1d5fb5] hover:underline">{r.employee?.preferredName || `${r.employee?.firstName} ${r.employee?.lastName}`}</Link> },
+        { title: 'Department', render: (_v, r) => r.employee?.department?.name || '—' },
+        { title: 'Cycle', render: (_v, r) => r.cycle?.name },
+        { title: 'Employee Submission', width: 140, render: (_v, r) => r.employeeSubmittedAt ? 'SUBMITTED' : (r.employeeSubmissionOverdue ? 'OVERDUE' : 'PENDING') },
+        { title: 'Score', width: 80, align: 'right', render: (_v, r) => r.totalScore != null ? `${Number(r.totalScore).toFixed(1)}%` : '—' },
+        { title: 'Status', width: 150, render: (_v, r) => <SoftBadge tone={STATUS_TONE[r.status] || 'grey'} dotless>{String(r.status).replace(/_/g, ' ')}</SoftBadge> },
+        { title: '', width: 110, align: 'right', render: (_v, r) => <Link href={`/performance?tab=assessments&assessment=${r.id}`}><Button size="small">Open KPIs</Button></Link> },
+      ] as ColumnsType<any>} />
+      {!assessments.isLoading && !rows.length && <div className="text-[13px] text-[#94a3b8] mt-2">No assessments use this template yet — open a Performance Cycle to assign it.</div>}
+    </div>
+  );
+}
 
 function Row({ label, value }: { label: string; value: any }) {
   return <div className="flex justify-between text-[13px] border-b border-[#f0f1f6] py-1.5"><span className="text-[#64748b]">{label}</span><span className="font-medium text-[#171a2e]">{value || '—'}</span></div>;

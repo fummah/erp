@@ -100,7 +100,7 @@ export default function FinanceDashboard() {
   });
   const data = dash.data;
   const loading = dash.isPending;
-  const recent = (data?.recentJournals || []).slice(0, 5);
+  const recent = (data?.recentJournals || []).slice(0, 3);
   const accountsByType = data?.accountsByType || [];
   const typeLabels: Record<string, string> = { ASSET: 'ASSET', LIABILITY: 'LIABILITY', EQUITY: 'EQUITY', REVENUE: 'REVENUE', EXPENSE: 'EXPENSE' };
 

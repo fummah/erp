@@ -23,11 +23,12 @@ import { ProjectsModule } from './modules/projects/projects.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SystemModule } from './modules/system/system.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { DeliveryModule } from './modules/delivery/delivery.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { DocumentTemplateModule } from './modules/document-templates/document-template.module';
 import { DocumentTrailModule } from './modules/document-trail/document-trail.module';
 import { HealthController } from './health.controller';
-@Module({imports:[ConfigModule.forRoot({isGlobal:true}),PrismaModule,CommonModule,AuthModule,DashboardModule,CompanyModule,SalesModule,FinanceModule,InventoryModule,ProcurementModule,HrModule,PerformanceModule,CrmModule,AssetsModule,ComplianceModule,FiscalisationModule,IntegrationsModule,AdminModule,PlatformModule,ProjectsModule,ApprovalsModule,ReportsModule,SystemModule,DocumentsModule,DeliveryModule,SettingsModule,DocumentTemplateModule,DocumentTrailModule,BankingModule],controllers:[HealthController]})
+@Module({imports:[ConfigModule.forRoot({isGlobal:true}),PrismaModule,CommonModule,AuthModule,DashboardModule,CompanyModule,SalesModule,FinanceModule,InventoryModule,ProcurementModule,HrModule,PerformanceModule,CrmModule,AssetsModule,ComplianceModule,FiscalisationModule,IntegrationsModule,AdminModule,PlatformModule,ProjectsModule,ApprovalsModule,ReportsModule,SystemModule,DocumentsModule,DeliveryModule,SettingsModule,DocumentTemplateModule,DocumentTrailModule,BankingModule,NotificationsModule],controllers:[HealthController]})
 export class AppModule {}
